@@ -159,6 +159,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > ok now audit the admin page correctness in prod, its showing incorrect supply drift, and is it showing all user balances currently
 
+### P19 · admin holders
+
+> ensure we are showing unknown addresses in admin dash as well with little warning badge with tooltip unknown address, have option to hide 0 balance addresses, also add their identicon in table, remove refresh button and just ensure it refreshes data appropriately
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

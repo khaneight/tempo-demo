@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage() {
   if (!(await isAdmin())) redirect("/admin/login");
   const data = await computeLiabilities();
-  // Server component -> client component boundary: bigints become strings.
+  // Server component -> client component boundary: bigints become strings. The client then keeps it fresh.
   const json = JSON.parse(JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v)));
-  return <AdminDashboard data={json} />;
+  return <AdminDashboard initial={json} />;
 }

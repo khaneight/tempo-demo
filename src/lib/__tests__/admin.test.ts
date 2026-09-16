@@ -3,7 +3,7 @@ import type { Address, Hex } from "viem";
 import { db } from "@/db";
 import { offrampOrders, onrampOrders } from "@/db/schema";
 import { computeLiabilities, reprocessStuck } from "@/lib/admin";
-import { FEE_MANAGER, type Chain } from "@/lib/chain";
+import { FEE_MANAGER, ZERO, type Chain } from "@/lib/chain";
 import { memoFromOrderId } from "@/lib/memo";
 import { makeUser, mockChain, resetDb, TOKEN, TREASURY } from "@/test/mock-chain";
 import { randomUUID } from "node:crypto";
@@ -122,6 +122,35 @@ describe("admin liabilities", () => {
     expect(L.fiat.expectedSupply).toBe(25_000_000n);
     expect(L.reconciliation.supplyDrift).toBe(0n);
     expect(L.counts.onramp).toEqual({ minted: 1 });
+  });
+
+  it("lists unknown holders discovered from Transfer logs, excluding registered users, treasury, fee AMM and 0x0", async () => {
+    const alice = await makeUser("aa");
+    const stranger = "0x2222222222222222222222222222222222222222";
+    const base = mockChain().chain;
+    const chain: Chain = {
+      ...base,
+      client: {
+        getBlockNumber: async () => 5_000n,
+        getBlock: base.client.getBlock,
+        getLogs: (async () => [
+          { args: { from: ZERO, to: alice } },
+          { args: { from: alice, to: stranger } },
+          { args: { from: alice, to: TREASURY } },
+          { args: { from: alice, to: FEE_MANAGER } },
+          { args: { from: stranger, to: ZERO } },
+        ]) as never,
+      },
+      balanceOf: async (a) => ({ [alice]: 20_000_000n, [stranger]: 5_000_000n } as Record<string, bigint>)[a.toLowerCase()] ?? 0n,
+      totalSupply: async () => 25_000_000n,
+    };
+    const L = await computeLiabilities(chain, 1_000n);
+    expect(L.unknownHolders).toEqual([{ address: stranger, balance: 5_000_000n }]);
+    expect(L.holdersSyncedBlock).toBe(5_000n);
+    expect(L.reconciliation.heldByOutsiders).toBe(-5_000_000n); // equals −(unknown total): the two views agree
+    // Second call is incremental: cursor stored, no re-scan needed for the holder set.
+    const again = await computeLiabilities(chain, 1_000n);
+    expect(again.unknownHolders.map((u) => u.address)).toEqual([stranger]);
   });
 
   it("flags supply drift when the chain has issuance the ledger never saw, and outsider holdings", async () => {

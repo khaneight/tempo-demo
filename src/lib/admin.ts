@@ -1,7 +1,11 @@
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { getAbiItem } from "viem";
+import { Abis } from "viem/tempo";
 import { db } from "@/db";
 import { offrampOrders, onrampOrders, users } from "@/db/schema";
-import { chain as defaultChain, type Chain, FEE_MANAGER } from "./chain";
+import { chain as defaultChain, type Chain, FEE_MANAGER, ZERO } from "./chain";
+import { env } from "./env";
+import { pgKv } from "./kv-postgres";
 import { getOrder, listByStatus, transition } from "./orders-db";
 import { processOfframp, type Deps as OfframpDeps } from "./offramp";
 import { processOnramp, type Deps as OnrampDeps } from "./onramp";
@@ -17,7 +21,12 @@ import { OrderLockedError } from "./orders-db";
 export type Liabilities = {
   /** feeAmmBalance: AcmeUSD collected as network fees (users pay fees in AcmeUSD; the Fee AMM holds them; ACME is the LP). */
   chain: { totalSupply: bigint; treasuryBalance: bigint; feeAmmBalance: bigint };
+  /** Registered wallets (passkeys created here). */
   users: { address: string; balance: bigint; createdAt: Date }[];
+  /** Addresses that have ever received AcmeUSD but never registered here (P2P recipients, other apps). */
+  unknownHolders: { address: string; balance: bigint }[];
+  /** Block up to which the holder set has been indexed. */
+  holdersSyncedBlock: bigint;
   fiat: { reservesHeld: bigint; tokensOwed: bigint; fiatOwed: bigint; pendingBurns: bigint; expectedSupply: bigint };
   counts: { onramp: Record<string, number>; offramp: Record<string, number> };
   reconciliation: {
@@ -47,18 +56,52 @@ async function sumByStatus(table: typeof onrampOrders | typeof offrampOrders, to
   return { sum, counts };
 }
 
-export async function computeLiabilities(ch: Chain = defaultChain()): Promise<Liabilities> {
+const transferEvent = getAbiItem({ abi: Abis.tip20, name: "Transfer" });
+const HOLDER_CHUNK = 50_000n;
+
+/**
+ * Every address that has ever received this token, indexed incrementally from
+ * the token's deploy block (cursor + set kept in the kv table). Lets the admin
+ * page list holders that never registered here — the "outsiders" the
+ * reconciliation otherwise only reports as a number.
+ */
+export async function syncHolders(ch: Chain, deployBlock: bigint): Promise<{ holders: string[]; block: bigint }> {
+  const key = `holders:${ch.token.toLowerCase()}`;
+  const prev = await pgKv.get<{ block: string; holders: string[] }>(key);
+  const latest = await ch.client.getBlockNumber();
+  const holders = new Set(prev?.holders ?? []);
+  let from = prev ? BigInt(prev.block) + 1n : deployBlock;
+  while (from <= latest) {
+    const to = from + HOLDER_CHUNK - 1n < latest ? from + HOLDER_CHUNK - 1n : latest;
+    const logs = (await ch.client.getLogs({ address: ch.token, event: transferEvent, fromBlock: from, toBlock: to })) as { args: { to?: string } }[];
+    for (const l of logs) if (l.args?.to) holders.add(l.args.to.toLowerCase());
+    from = to + 1n;
+  }
+  await pgKv.set(key, { block: latest.toString(), holders: [...holders] });
+  return { holders: [...holders], block: latest };
+}
+
+export async function computeLiabilities(ch: Chain = defaultChain(), deployBlock: bigint = env().TOKEN_DEPLOY_BLOCK): Promise<Liabilities> {
   const token = ch.token;
-  const [on, off, userRows, totalSupply, treasuryBalance, feeAmmBalance] = await Promise.all([
+  const [on, off, userRows, totalSupply, treasuryBalance, feeAmmBalance, holderIndex] = await Promise.all([
     sumByStatus(onrampOrders, token),
     sumByStatus(offrampOrders, token),
     db.select().from(users).orderBy(desc(users.createdAt)).limit(1000),
     ch.totalSupply(),
     ch.balanceOf(ch.treasury),
     ch.balanceOf(FEE_MANAGER),
+    syncHolders(ch, deployBlock).catch((err) => {
+      console.warn("[admin] holder sync failed:", (err as Error).message.split("\n")[0]);
+      return { holders: [] as string[], block: 0n };
+    }),
   ]);
   const balances = await Promise.all(userRows.map((u) => ch.balanceOf(u.address as `0x${string}`)));
   const userList = userRows.map((u, i) => ({ address: u.address, balance: balances[i], createdAt: u.createdAt }));
+
+  const known = new Set([...userRows.map((u) => u.address.toLowerCase()), ch.treasury.toLowerCase(), FEE_MANAGER, ZERO]);
+  const unknownAddrs = holderIndex.holders.filter((a) => !known.has(a)).slice(0, 200);
+  const unknownBalances = await Promise.all(unknownAddrs.map((a) => ch.balanceOf(a as `0x${string}`)));
+  const unknownHolders = unknownAddrs.map((address, i) => ({ address, balance: unknownBalances[i] })).sort((a, b) => Number(b.balance - a.balance));
 
   // needs_review rows are money in flight too: an onramp under review has captured fiat (tokens owed);
   // an offramp under review that was already credited has paid out fiat and still holds tokens to burn.
@@ -83,6 +126,8 @@ export async function computeLiabilities(ch: Chain = defaultChain()): Promise<Li
   return {
     chain: { totalSupply, treasuryBalance, feeAmmBalance },
     users: userList,
+    unknownHolders,
+    holdersSyncedBlock: holderIndex.block,
     fiat: {
       reservesHeld: minted - paidOut,
       tokensOwed: on.sum("payment_captured", "minting", "needs_review"),
