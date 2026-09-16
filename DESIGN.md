@@ -84,6 +84,9 @@ The wallet shows one timeline of deposits, withdrawals, sends, receives and netw
 | **Reconciliation A** `totalSupply − (Σ minted − Σ burned) = 0` | both |
 | **Reconciliation B** `treasury − pendingBurns` = unattributed deposits | both |
 | **Reconciliation C** `Σ users + treasury + feeAmm − totalSupply` = held by non-users | both |
+| **Holders table**: registered wallets plus every address that ever received the token (an incremental index of `Transfer` logs from the deploy block, cursor kept in `kv`), flagged "unknown" when it never registered here; its total must equal −Reconciliation C | both |
+
+The page polls every 15 s and refetches on focus/reconnect; actions (reprocess, reopen) invalidate it — there is no manual refresh.
 
 A note on how the first live run went, because it is the point of having the page: the dashboard showed a 0.000049 AcmeUSD supply drift within minutes. First hypothesis — "fees paid in AcmeUSD are a supply sink" — was wrong (fees *move* tokens; they never change `totalSupply`), and the numbers after the first offramp made that obvious. The real cause was the setup script's smoke test, which minted 1.000000 and burned 0.999951 (the fee) *outside the ledger*. Two fixes: the setup script now reclaims its fee from the AMM (`rebalanceSwap`) and burns the full amount so a fresh deployment starts at supply 0, and `scripts/reclaim-fees.ts` is the operator tool to pull AcmeUSD fee revenue out of the pool and retire it deliberately.
 
