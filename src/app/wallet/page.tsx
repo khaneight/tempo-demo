@@ -10,16 +10,20 @@ import { RequireWallet } from "@/components/require-wallet";
 import { SendDialog } from "@/components/send-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WalletSwitcher } from "@/components/wallet-switcher";
 import { WithdrawDialog } from "@/components/withdraw-dialog";
+import { useWallets } from "@/lib/use-wallets";
 import { formatAmount } from "@/lib/amounts";
 import { api } from "@/lib/api-client";
 import { addressUrl } from "@/lib/client-config";
 import { useAcmeBalance, useWallet } from "@/lib/use-wallet";
 
-type Flow = "deposit" | "withdraw" | "send" | null;
+type Flow = "deposit" | "withdraw" | "send" | "wallets" | null;
 
 function Inner() {
   const { address } = useWallet();
+  const { wallets } = useWallets();
+  const current = wallets.find((w) => w.address === address);
   const balance = useAcmeBalance(address);
   const activity = useQuery({ queryKey: ["activity"], queryFn: () => api<{ rows: ActivityDto[] }>("/api/activity"), refetchInterval: 10_000 });
   const [flow, setFlow] = useState<Flow>(null);
@@ -32,7 +36,12 @@ function Inner() {
           <div className="flex items-center gap-4">
             <Identicon address={address ?? ""} size={56} />
             <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Passkey wallet · Tempo testnet</div>
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <span>{current?.label || "Passkey wallet"} · Tempo testnet</span>
+                <button type="button" onClick={() => setFlow("wallets")} className="rounded border px-1.5 py-0.5 normal-case tracking-normal hover:bg-muted">
+                  {wallets.length > 1 ? `Switch (${wallets.length})` : "Wallets"}
+                </button>
+              </div>
               <div className="mt-1 flex items-center gap-2">
                 <code className="truncate font-mono text-sm">{address}</code>
                 <button
@@ -80,6 +89,7 @@ function Inner() {
       <DepositDialog open={flow === "deposit"} onOpenChange={(o) => setFlow(o ? "deposit" : null)} />
       <WithdrawDialog open={flow === "withdraw"} onOpenChange={(o) => setFlow(o ? "withdraw" : null)} />
       <SendDialog open={flow === "send"} onOpenChange={(o) => setFlow(o ? "send" : null)} />
+      <WalletSwitcher open={flow === "wallets"} onOpenChange={(o) => setFlow(o ? "wallets" : null)} />
     </div>
   );
 }

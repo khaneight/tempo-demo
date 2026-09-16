@@ -139,6 +139,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 > - identicons on address in nav bar and wallet page, put account info and address at the top along with balances
 > - have one unified transaction history with deposits/withdraws and send/recieve, with filtering and sorting options
 
+### P15 · multiple wallets
+
+> i noticed i can create multiple wallets with a passkey but cant switch between them, make that possible on wallet page to switch between wallets and create new wallets under that identity
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong
