@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   description: "ACME's stablecoin on Tempo — buy, send and cash out with a passkey wallet.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-muted/30 font-sans">
