@@ -121,6 +121,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > ok great. now i want to focus on deployment. i want to connect github repo to vercel for automatic deployments, and use free neon database from vercel marketplace. migrations should be applied automatically on deployment and i want a ci on github actions to run tests. create the necessary actions and give me a checklist of steps needed for full deployment process.
 
+### P12 · while wiring Vercel + Neon
+
+> i added TEMPO_ prefix to the neon db env vars
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

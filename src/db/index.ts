@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
+import { databaseUrl } from "./url";
 
 /**
  * node-postgres (not the Neon HTTP driver) so we get real transactions with
@@ -13,7 +14,7 @@ function pool() {
   if (!globalForDb.__pool) {
     // TLS is driven by the connection string (`sslmode=verify-full` on Neon); the server
     // certificate is verified — never set rejectUnauthorized:false for a ledger.
-    globalForDb.__pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+    globalForDb.__pool = new Pool({ connectionString: databaseUrl(), max: 5 });
   }
   return globalForDb.__pool;
 }

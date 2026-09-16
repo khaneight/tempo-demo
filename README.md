@@ -32,7 +32,7 @@ Passkeys work on `localhost` out of the box. For any other host set `RP_ID` (bar
 
 | var | purpose |
 |---|---|
-| `DATABASE_URL` | Postgres (Neon on Vercel) |
+| `DATABASE_URL` (or `TEMPO_DATABASE_URL` + `TEMPO_DATABASE_URL_UNPOOLED` as injected by the Vercel Neon integration with the `TEMPO_` prefix) | Postgres |
 | `ISSUER_PRIVATE_KEY` | secp256k1 key of the ACME issuer **= treasury** (`DEFAULT_ADMIN_ROLE` + `ISSUER_ROLE` on the token) |
 | `ACME_USD_ADDRESS`, `TOKEN_DEPLOY_BLOCK` | output of `pnpm setup:token` |
 | `NEXT_PUBLIC_ACME_USD_ADDRESS`, `NEXT_PUBLIC_TREASURY_ADDRESS`, `NEXT_PUBLIC_EXPLORER_URL` | same, for the browser |
@@ -65,7 +65,7 @@ Automatic: every push to `main` deploys production; PRs get preview deployments.
 
 One-time setup checklist:
 1. Vercel → **Add New → Project** → import `khaneight/tempo-demo` (framework: Next.js, root `/`). Don't deploy yet.
-2. Project → **Storage → Create Database → Neon (free)** → connect to all environments. This injects `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
+2. Project → **Storage → Create Database → Neon (free)** → connect to all environments with the env prefix `TEMPO_`. This injects `TEMPO_DATABASE_URL` (pooled) and `TEMPO_DATABASE_URL_UNPOOLED` (used by the migrator).
 3. Project → **Settings → Environment Variables** (Production + Preview): `ISSUER_PRIVATE_KEY`, `ISSUER_FEE_TOKEN`, `ACME_USD_ADDRESS`, `TOKEN_DEPLOY_BLOCK`, `TEMPO_RPC_URL`, `NEXT_PUBLIC_ACME_USD_ADDRESS`, `NEXT_PUBLIC_TREASURY_ADDRESS`, `NEXT_PUBLIC_EXPLORER_URL`, `ADMIN_PASSWORD` (≥ 8 chars), `AUTH_SECRET` (≥ 32 random chars), `CRON_SECRET` (random; Vercel sends it as the cron's bearer token). Leave `RP_ID`/`ORIGIN` unset — they default to the deployment URL — unless you attach a custom domain (then set both).
 4. **Deploy** (Deployments → Redeploy, or push to `main`). The build log should show `migrations applied (unpooled connection)`.
 5. Smoke test on the production URL: create a passkey wallet → buy → cash out → `/admin` reconciliation balanced. Passkeys created on a preview URL belong to that hostname only.

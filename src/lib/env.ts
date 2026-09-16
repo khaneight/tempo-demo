@@ -11,7 +11,9 @@ const address = z
  * and so build-time (e.g. `next build` on Vercel) doesn't require secrets.
  */
 const serverSchema = z.object({
-  DATABASE_URL: z.string().url(),
+  /** Either name works; the Vercel Neon integration is configured with the TEMPO_ prefix. */
+  TEMPO_DATABASE_URL: z.string().url().optional(),
+  DATABASE_URL: z.string().url().optional(),
   ISSUER_PRIVATE_KEY: hex.refine((s) => s.length === 66, "32-byte key").transform((s) => s as `0x${string}`),
   ACME_USD_ADDRESS: address,
   TOKEN_DEPLOY_BLOCK: z.coerce.bigint().default(0n),
@@ -25,7 +27,7 @@ const serverSchema = z.object({
   CRON_SECRET: z.string().min(1).optional(),
   /** Test-only fault injection: mint_unknown | mint_revert | burn_unknown */
   CHAOS: z.string().optional(),
-});
+}).refine((e) => e.TEMPO_DATABASE_URL || e.DATABASE_URL, { message: "Set TEMPO_DATABASE_URL or DATABASE_URL" });
 
 export type ServerEnv = Omit<z.infer<typeof serverSchema>, "RP_ID" | "ORIGIN"> & { RP_ID: string; ORIGIN: string };
 
