@@ -18,8 +18,8 @@ const serverSchema = z.object({
   TEMPO_RPC_URL: z.string().url().default("https://rpc.moderato.tempo.xyz"),
   /** Token the issuer pays its own fees in (pathUSD by default, faucet-funded). */
   ISSUER_FEE_TOKEN: address.default("0x20c0000000000000000000000000000000000000"),
-  RP_ID: z.string().min(1).default("localhost"),
-  ORIGIN: z.string().url().default("http://localhost:3000"),
+  RP_ID: z.string().min(1).optional(),
+  ORIGIN: z.string().url().optional(),
   ADMIN_PASSWORD: z.string().min(8, "ADMIN_PASSWORD must be at least 8 characters"),
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
   CRON_SECRET: z.string().min(1).optional(),
@@ -27,11 +27,29 @@ const serverSchema = z.object({
   CHAOS: z.string().optional(),
 });
 
-export type ServerEnv = z.infer<typeof serverSchema>;
+export type ServerEnv = Omit<z.infer<typeof serverSchema>, "RP_ID" | "ORIGIN"> & { RP_ID: string; ORIGIN: string };
+
+/**
+ * WebAuthn relying party. Explicit RP_ID/ORIGIN win; on Vercel they default to the
+ * deployment's own URL (production domain for production, the preview URL for previews)
+ * so passkeys work on every deployment without per-branch config. Locally: localhost.
+ */
+function relyingParty(e: z.infer<typeof serverSchema>): { RP_ID: string; ORIGIN: string } {
+  const vercelHost =
+    process.env.VERCEL_ENV === "production"
+      ? (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL)
+      : process.env.VERCEL_URL;
+  const ORIGIN = e.ORIGIN ?? (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
+  const RP_ID = e.RP_ID ?? new URL(ORIGIN).hostname;
+  return { RP_ID, ORIGIN };
+}
 
 let cached: ServerEnv | undefined;
 export function env(): ServerEnv {
-  if (!cached) cached = serverSchema.parse(process.env);
+  if (!cached) {
+    const parsed = serverSchema.parse(process.env);
+    cached = { ...parsed, ...relyingParty(parsed) };
+  }
   return cached;
 }
 

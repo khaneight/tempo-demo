@@ -117,6 +117,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > ok now lets get it setup on this repo https://github.com/khaneight/tempo-demo ensure our gitignore is correct first
 
+### P11 · 2026-09-16 · deployment pipeline
+
+> ok great. now i want to focus on deployment. i want to connect github repo to vercel for automatic deployments, and use free neon database from vercel marketplace. migrations should be applied automatically on deployment and i want a ci on github actions to run tests. create the necessary actions and give me a checklist of steps needed for full deployment process.
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

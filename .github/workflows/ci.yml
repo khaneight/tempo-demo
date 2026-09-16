@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: acme
+          POSTGRES_PASSWORD: acme
+          POSTGRES_DB: acmeusd_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U acme -d acmeusd_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Tests migrate + truncate this database themselves (src/test/global-setup.ts).
+      TEST_DATABASE_URL: postgres://acme:acme@localhost:5432/acmeusd_test
+      # Build-time public config; real values are set in Vercel, these only need to parse.
+      NEXT_PUBLIC_ACME_USD_ADDRESS: "0x20c0000000000000000000005ac7553a9946a27a"
+      NEXT_PUBLIC_TREASURY_ADDRESS: "0x5909e7e9248d391d25ad018ab439c54b5f208a46"
+      NEXT_PUBLIC_EXPLORER_URL: https://explore.testnet.tempo.xyz
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  docker:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: |
+            NEXT_PUBLIC_ACME_USD_ADDRESS=0x20c0000000000000000000005ac7553a9946a27a
+            NEXT_PUBLIC_TREASURY_ADDRESS=0x5909e7e9248d391d25ad018ab439c54b5f208a46
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

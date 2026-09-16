@@ -57,8 +57,19 @@ pnpm exec tsx scripts/inspect.ts [address…] [--tx 0x…]   # where is every Ac
 pnpm exec tsx scripts/reclaim-fees.ts [units|all]        # pull AcmeUSD fee revenue out of the Fee AMM and burn it
 ```
 
-## Deploy (Vercel)
-GitHub → Vercel project; add the env vars above (Neon integration provides `DATABASE_URL`); build runs `next build`; migrations: `pnpm db:migrate` against the Neon URL (once, or in a build step). `vercel.json` schedules `/api/admin/reprocess` every 6 h (cron needs `CRON_SECRET`).
+## CI
+`.github/workflows/ci.yml` runs on every push/PR: typecheck, lint, the test suite against a Postgres service container, `next build`, and a Docker image build.
+
+## Deploy (Vercel + Neon)
+Automatic: every push to `main` deploys production; PRs get preview deployments. `vercel.json` sets the build command to **`pnpm db:migrate && pnpm build`**, so migrations are applied to the linked Neon database on every deployment (idempotent; uses Neon's unpooled URL for the migrator). The cron sweeps stuck orders every 6 h.
+
+One-time setup checklist:
+1. Vercel → **Add New → Project** → import `khaneight/tempo-demo` (framework: Next.js, root `/`). Don't deploy yet.
+2. Project → **Storage → Create Database → Neon (free)** → connect to all environments. This injects `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
+3. Project → **Settings → Environment Variables** (Production + Preview): `ISSUER_PRIVATE_KEY`, `ISSUER_FEE_TOKEN`, `ACME_USD_ADDRESS`, `TOKEN_DEPLOY_BLOCK`, `TEMPO_RPC_URL`, `NEXT_PUBLIC_ACME_USD_ADDRESS`, `NEXT_PUBLIC_TREASURY_ADDRESS`, `NEXT_PUBLIC_EXPLORER_URL`, `ADMIN_PASSWORD` (≥ 8 chars), `AUTH_SECRET` (≥ 32 random chars), `CRON_SECRET` (random; Vercel sends it as the cron's bearer token). Leave `RP_ID`/`ORIGIN` unset — they default to the deployment URL — unless you attach a custom domain (then set both).
+4. **Deploy** (Deployments → Redeploy, or push to `main`). The build log should show `migrations applied (unpooled connection)`.
+5. Smoke test on the production URL: create a passkey wallet → buy → cash out → `/admin` reconciliation balanced. Passkeys created on a preview URL belong to that hostname only.
+6. Optional: Settings → Cron Jobs shows `/api/admin/reprocess`; hit it once manually with `Authorization: Bearer $CRON_SECRET` to confirm 200.
 
 ## Admin
 `/admin` — password is `ADMIN_PASSWORD` from the environment (reviewers: see the submission email / Vercel env).
