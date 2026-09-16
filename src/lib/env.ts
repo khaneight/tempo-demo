@@ -1,0 +1,43 @@
+import { z } from "zod";
+
+const hex = z.string().regex(/^0x[0-9a-fA-F]+$/, "expected 0x-hex");
+const address = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x address")
+  .transform((s) => s.toLowerCase() as `0x${string}`);
+
+/**
+ * Server-only environment. Parsed lazily so the client bundle never touches it
+ * and so build-time (e.g. `next build` on Vercel) doesn't require secrets.
+ */
+const serverSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  ISSUER_PRIVATE_KEY: hex.refine((s) => s.length === 66, "32-byte key").transform((s) => s as `0x${string}`),
+  ACME_USD_ADDRESS: address,
+  TOKEN_DEPLOY_BLOCK: z.coerce.bigint().default(0n),
+  TEMPO_RPC_URL: z.string().url().default("https://rpc.moderato.tempo.xyz"),
+  /** Token the issuer pays its own fees in (pathUSD by default, faucet-funded). */
+  ISSUER_FEE_TOKEN: address.default("0x20c0000000000000000000000000000000000000"),
+  RP_ID: z.string().min(1).default("localhost"),
+  ORIGIN: z.string().url().default("http://localhost:3000"),
+  ADMIN_PASSWORD: z.string().min(8, "ADMIN_PASSWORD must be at least 8 characters"),
+  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
+  CRON_SECRET: z.string().min(1).optional(),
+  /** Test-only fault injection: mint_unknown | mint_revert | burn_unknown */
+  CHAOS: z.string().optional(),
+});
+
+export type ServerEnv = z.infer<typeof serverSchema>;
+
+let cached: ServerEnv | undefined;
+export function env(): ServerEnv {
+  if (!cached) cached = serverSchema.parse(process.env);
+  return cached;
+}
+
+/** Public config that is safe to ship to the browser. */
+export const publicEnv = {
+  ACME_USD_ADDRESS: (process.env.NEXT_PUBLIC_ACME_USD_ADDRESS ?? "").toLowerCase() as `0x${string}`,
+  TREASURY_ADDRESS: (process.env.NEXT_PUBLIC_TREASURY_ADDRESS ?? "").toLowerCase() as `0x${string}`,
+  EXPLORER_URL: process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://explore.testnet.tempo.xyz",
+};
