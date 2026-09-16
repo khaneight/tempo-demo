@@ -12,11 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WalletSwitcher } from "@/components/wallet-switcher";
 import { WithdrawDialog } from "@/components/withdraw-dialog";
-import { useWallets } from "@/lib/use-wallets";
 import { formatAmount } from "@/lib/amounts";
 import { api } from "@/lib/api-client";
 import { addressUrl } from "@/lib/client-config";
 import { useAcmeBalance, useWallet } from "@/lib/use-wallet";
+import { useWallets } from "@/lib/use-wallets";
 
 type Flow = "deposit" | "withdraw" | "send" | "wallets" | null;
 
@@ -25,49 +25,52 @@ function Inner() {
   const { wallets } = useWallets();
   const current = wallets.find((w) => w.address === address);
   const balance = useAcmeBalance(address);
-  const activity = useQuery({ queryKey: ["activity"], queryFn: () => api<{ rows: ActivityDto[] }>("/api/activity"), refetchInterval: 10_000 });
+  const activity = useQuery({ queryKey: ["activity", address], queryFn: () => api<{ rows: ActivityDto[] }>("/api/activity"), refetchInterval: 10_000 });
   const [flow, setFlow] = useState<Flow>(null);
   const [copied, setCopied] = useState(false);
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardContent className="flex flex-col gap-5 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setFlow("wallets")}
-              className="group flex items-center gap-2 rounded-xl border bg-background p-1.5 pr-2.5 hover:bg-muted"
-              title="Switch wallet"
-            >
-              <Identicon address={address ?? ""} size={48} />
-              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
-            </button>
-            <div className="min-w-0">
-              <button type="button" onClick={() => setFlow("wallets")} className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground">
-                <span>{current?.label || "Passkey wallet"}</span>
-                <ChevronDown className="h-3 w-3" />
-                {wallets.length > 1 && <span className="rounded-full bg-muted px-1.5 normal-case tracking-normal">{wallets.length} wallets</span>}
+        <CardContent className="space-y-4 pt-6">
+          {/* Row 1: wallet selector (left) · balance (right) */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setFlow("wallets")}
+                className="group flex min-w-0 items-center gap-3 rounded-xl border bg-background py-2 pl-2 pr-4 text-left hover:bg-muted"
+                title="Switch wallet"
+              >
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                <Identicon address={address ?? ""} size={44} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <span className="truncate">{current?.label || "Passkey wallet"}</span>
+                    {wallets.length > 1 && <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{wallets.length} wallets</span>}
+                  </div>
+                  <div className="truncate font-mono text-xs text-muted-foreground">{address}</div>
+                </div>
               </button>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="truncate font-mono text-sm">{address}</code>
-                <button
-                  type="button"
-                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  title="Copy address"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(address ?? "");
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  }}
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </button>
-                <a href={addressUrl(address ?? "")} target="_blank" rel="noreferrer" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="View on explorer">
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <button
+                type="button"
+                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Copy address"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(address ?? "");
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </button>
+              <a href={addressUrl(address ?? "")} target="_blank" rel="noreferrer" className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="View on explorer">
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </div>
+            <div className="sm:text-right">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balance</div>
+              <div className="flex items-baseline gap-2 sm:justify-end">
                 <span className="font-mono text-4xl font-semibold tabular-nums">
                   {balance.data === undefined ? <Loader2 className="inline h-6 w-6 animate-spin" /> : formatAmount(balance.data)}
                 </span>
@@ -75,7 +78,8 @@ function Inner() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          {/* Row 2: actions */}
+          <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button onClick={() => setFlow("deposit")}>Deposit</Button>
             <Button variant="outline" onClick={() => setFlow("withdraw")} disabled={!balance.data}>Withdraw</Button>
             <Button variant="outline" onClick={() => setFlow("send")} disabled={!balance.data}>Send</Button>

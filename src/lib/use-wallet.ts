@@ -13,7 +13,7 @@ import { ACME_USD } from "./client-config";
 export function useWallet() {
   const { address, isConnected, status } = useAccount();
   const session = useQuery({
-    queryKey: ["session"],
+    queryKey: ["session", address?.toLowerCase()],
     queryFn: () => api<{ user: { address: `0x${string}`; credentialId: string } | null }>("/api/session"),
     staleTime: 30_000,
   });

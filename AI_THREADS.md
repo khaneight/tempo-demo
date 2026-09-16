@@ -149,6 +149,12 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 > - make deposit/withdraw/transfer success/failure screens within the same popup once transaction is sent
 > - in send option have dropdown options of your own wallets, validate address and show identicon of recipient, with confirmation screen
 
+### P17 · wallet switching UX
+
+> - i shouldnt need to authenticate again when i switch wallets, only once on sign in and when submitting transactions
+> - make the wallet selector button encompass the icon, address, and name of wallet. carot on left of icon. put balance on right side of row with action buttons below it
+> - remove delete and switch buttons in wallet selection and just click row with highliging, add edit button for renaming wallet next to name of wallet
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

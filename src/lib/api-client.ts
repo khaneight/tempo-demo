@@ -1,6 +1,8 @@
 "use client";
 
+import { getAccount } from "wagmi/actions";
 import type { Serialized } from "./serialize";
+import { wagmiConfig } from "./wagmi";
 import type { OfframpOrder, OnrampOrder } from "@/db/schema";
 
 export type OnrampDto = Serialized<OnrampOrder>;
@@ -16,10 +18,24 @@ export class ApiError extends Error {
   }
 }
 
+/** The wallet this tab is acting for (wagmi's active account); the server honours it only if linked. */
+function activeWallet(): string | undefined {
+  try {
+    return getAccount(wagmiConfig()).address?.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  const wallet = activeWallet();
   const res = await fetch(path, {
     ...init,
-    headers: { ...(init?.json !== undefined ? { "content-type": "application/json" } : {}), ...init?.headers },
+    headers: {
+      ...(init?.json !== undefined ? { "content-type": "application/json" } : {}),
+      ...(wallet ? { "x-wallet": wallet } : {}),
+      ...init?.headers,
+    },
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
     credentials: "same-origin",
   });

@@ -40,6 +40,22 @@ describe("admin cookie", () => {
   });
 });
 
+describe("linked wallets cookie", () => {
+  it("round-trips, rejects tampering and expiry, and caps the list", async () => {
+    const { decodeLinked, encodeLinked } = await import("@/lib/auth");
+    const w = [{ a: "0x59ef6877c5b6dd640ce9e1f94931e9eab40333ff" as const, c: "cred-1" }];
+    const v = encodeLinked(w);
+    expect(decodeLinked(v)).toEqual(w);
+    const [payload, sig] = v.split(".");
+    expect(decodeLinked(`${payload}x.${sig}`)).toEqual([]);
+    expect(decodeLinked(`${payload}.${sig.slice(1)}a`)).toEqual([]);
+    expect(decodeLinked(v, Date.now() + 25 * 60 * 60 * 1000)).toEqual([]); // expired
+    expect(decodeLinked(undefined)).toEqual([]);
+    const many = Array.from({ length: 30 }, (_, i) => ({ a: `0x${i.toString(16).padStart(40, "0")}` as `0x${string}`, c: `c${i}` }));
+    expect(decodeLinked(encodeLinked(many))).toHaveLength(20);
+  });
+});
+
 describe("api handle()", () => {
   const ctx = { params: Promise.resolve({}) };
   const run = async (err: unknown) => {

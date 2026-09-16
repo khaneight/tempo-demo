@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { short } from "@/lib/client-config";
 import { useWallet } from "@/lib/use-wallet";
+import { linkCurrentSession } from "@/lib/use-wallets";
 
 type Mode = "create" | "signin";
 
@@ -47,6 +48,7 @@ export function ConnectButtons({
         connector,
         ...(m === "create" ? { capabilities: { method: "register", name: `AcmeUSD wallet · ${new Date().toLocaleDateString()}` } } : {}),
       } as Parameters<typeof connectAsync>[0]);
+      await linkCurrentSession();
       await qc.invalidateQueries({ queryKey: ["session"] });
       onConnected?.();
     } catch (e) {
