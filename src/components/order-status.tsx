@@ -88,8 +88,8 @@ export function TxLink({ hash, label }: { hash: string | null | undefined; label
 
 export function Amount({ value, className = "" }: { value: string | bigint; className?: string }) {
   return (
-    <span className={`tabular-nums ${className}`}>
-      {formatAmount(BigInt(value))} <span className="text-muted-foreground">AcmeUSD</span>
+    <span className={`font-mono tabular-nums ${className}`}>
+      {formatAmount(BigInt(value))} <span className="font-sans text-muted-foreground">AcmeUSD</span>
     </span>
   );
 }

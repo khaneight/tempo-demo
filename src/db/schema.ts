@@ -5,6 +5,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -24,7 +25,30 @@ export const users = pgTable("users", {
   address: text("address").primaryKey(),
   credentialId: text("credential_id").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Last block whose AcmeUSD transfers for this wallet have been copied into transfer_events. */
+  syncedBlock: bigint("synced_block", { mode: "bigint" }),
 });
+
+/**
+ * Per-wallet index of on-chain AcmeUSD Transfer logs (sends/receives/mints/burns/fees),
+ * filled incrementally by the activity endpoint so the RPC is only ever asked for
+ * the blocks since the last sync. Orders are joined to these by tx hash.
+ */
+export const transferEvents = pgTable(
+  "transfer_events",
+  {
+    txHash: text("tx_hash").notNull(),
+    logIndex: integer("log_index").notNull(),
+    blockNumber: bigint("block_number", { mode: "bigint" }).notNull(),
+    blockTime: timestamp("block_time", { withTimezone: true }).notNull(),
+    from: text("from_address").notNull(),
+    to: text("to_address").notNull(),
+    amount: bigint("amount", { mode: "bigint" }).notNull(),
+    memo: text("memo"),
+  },
+  (t) => [primaryKey({ columns: [t.txHash, t.logIndex] }), index("transfer_from_idx").on(t.from), index("transfer_to_idx").on(t.to)],
+);
+export type TransferEvent = typeof transferEvents.$inferSelect;
 
 export const onrampStatus = pgEnum("onramp_status", [
   "created", // row exists, nothing charged

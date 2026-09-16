@@ -131,6 +131,14 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > check the vercel logs and fix *(pasted a Vercel request log: `POST /api/auth/register/options` → 500 on `tempo-demo-beta.vercel.app`, deployment `dpl_B7LWdzGu57uwQNDwEvNtuxWhZFHf`)*
 
+### P14 · UI pass
+
+> now lets improve the UI:
+> - replace fonts use inter for text and jetbrains mono for numbers
+> - on wallet page remove the network fee section, make deposit/withdraw/transfer flows popups instead of dedicated tabs
+> - identicons on address in nav bar and wallet page, put account info and address at the top along with balances
+> - have one unified transaction history with deposits/withdraws and send/recieve, with filtering and sorting options
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

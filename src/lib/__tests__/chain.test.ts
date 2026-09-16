@@ -57,6 +57,7 @@ function fakeClient(over: Partial<ChainClient> = {}): ChainClient & { calls: Rec
     getLogs: rec("getLogs", o.getLogs ?? (async () => [])) as never,
     getTransactionReceipt: rec("getTransactionReceipt", o.getTransactionReceipt ?? (async () => receipt("success"))) as never,
     getBlockNumber: rec("getBlockNumber", o.getBlockNumber ?? (async () => 123n)) as never,
+    getBlock: rec("getBlock", o.getBlock ?? (async () => ({ timestamp: 1_700_000_000n }))) as never,
     readContract: rec("readContract", o.readContract ?? (async () => 0n)) as never,
     nonce: { getNonce: rec("getNonce", async () => 0n) as never },
   } as never;

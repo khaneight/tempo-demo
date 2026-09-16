@@ -18,10 +18,22 @@ type Mode = "create" | "signin";
  *  - create: `capabilities.method = 'register'` -> new passkey -> new address
  *  - signin: existing passkey (browser picker) -> same address as before
  */
-export function ConnectButtons({ size = "default", onConnected, compact = false }: { size?: "default" | "lg" | "sm"; onConnected?: () => void; compact?: boolean }) {
+export function ConnectButtons({
+  size = "default",
+  onConnected,
+  compact = false,
+  reauth = false,
+}: {
+  size?: "default" | "lg" | "sm";
+  onConnected?: () => void;
+  compact?: boolean;
+  /** Show even while wagmi is connected (server session expired): disconnect, then run the ceremony again. */
+  reauth?: boolean;
+}) {
   const qc = useQueryClient();
   const [connector] = useConnectors();
   const { connectAsync, isPending } = useConnect();
+  const { disconnectAsync } = useDisconnect();
   const { isConnected } = useWallet();
   const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +42,7 @@ export function ConnectButtons({ size = "default", onConnected, compact = false 
     setMode(m);
     setError(null);
     try {
+      if (isConnected) await disconnectAsync();
       await connectAsync({
         connector,
         ...(m === "create" ? { capabilities: { method: "register", name: `AcmeUSD wallet · ${new Date().toLocaleDateString()}` } } : {}),
@@ -44,7 +57,7 @@ export function ConnectButtons({ size = "default", onConnected, compact = false 
     }
   }
 
-  if (isConnected) return null;
+  if (isConnected && !reauth) return null;
   const busy = (m: Mode) => isPending && mode === m;
   return (
     <div className="space-y-2">

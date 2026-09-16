@@ -24,7 +24,7 @@ export function RequireWallet({ children }: { children: React.ReactNode }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ConnectButtons />
+            <ConnectButtons reauth={w.isConnected} />
           </CardContent>
         </Card>
       </div>

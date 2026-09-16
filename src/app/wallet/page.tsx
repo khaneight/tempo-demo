@@ -1,100 +1,85 @@
 "use client";
 
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Hooks } from "wagmi/tempo";
-import { OrderList } from "@/components/order-card";
+import { ActivityTable, type ActivityDto } from "@/components/activity-table";
+import { DepositDialog } from "@/components/deposit-dialog";
+import { Identicon } from "@/components/identicon";
 import { RequireWallet } from "@/components/require-wallet";
+import { SendDialog } from "@/components/send-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WithdrawDialog } from "@/components/withdraw-dialog";
 import { formatAmount } from "@/lib/amounts";
-import { api, type OfframpDto, type OnrampDto } from "@/lib/api-client";
-import { ACME_USD, addressUrl } from "@/lib/client-config";
+import { api } from "@/lib/api-client";
+import { addressUrl } from "@/lib/client-config";
 import { useAcmeBalance, useWallet } from "@/lib/use-wallet";
+
+type Flow = "deposit" | "withdraw" | "send" | null;
 
 function Inner() {
   const { address } = useWallet();
   const balance = useAcmeBalance(address);
-  const orders = useQuery({ queryKey: ["orders"], queryFn: () => api<{ onramps: OnrampDto[]; offramps: OfframpDto[] }>("/api/orders"), refetchInterval: 8_000 });
-  const feeToken = Hooks.fee.useUserToken({ account: address, query: { enabled: !!address } });
-  const setFeeToken = Hooks.fee.useSetUserTokenSync();
+  const activity = useQuery({ queryKey: ["activity"], queryFn: () => api<{ rows: ActivityDto[] }>("/api/activity"), refetchInterval: 10_000 });
+  const [flow, setFlow] = useState<Flow>(null);
   const [copied, setCopied] = useState(false);
-  const feeIsAcme = feeToken.data?.address?.toLowerCase() === ACME_USD;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="space-y-4 lg:col-span-2">
-        <Card>
-          <CardHeader>
-            <CardDescription>Your balance</CardDescription>
-            <CardTitle className="text-4xl tabular-nums">
-              {balance.data === undefined ? <Loader2 className="h-6 w-6 animate-spin" /> : formatAmount(balance.data)} <span className="text-base font-normal text-muted-foreground">AcmeUSD</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button nativeButton={false} render={<Link href="/onramp" />}>Buy</Button>
-            <Button nativeButton={false} variant="outline" render={<Link href="/offramp" />}>Cash out</Button>
-            <Button nativeButton={false} variant="outline" render={<Link href="/send" />}>Send</Button>
-          </CardContent>
-        </Card>
-
-        {orders.data && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <OrderList title="Purchases" kind="onramp" orders={orders.data.onramps} />
-            <OrderList title="Cash-outs" kind="offramp" orders={orders.data.offramps} />
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Receive</CardTitle>
-            <CardDescription>Your Tempo address. Anyone can send you AcmeUSD here.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <code className="block break-all rounded bg-muted p-2 text-xs">{address}</code>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(address ?? "");
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />} Copy
-              </Button>
-              <Button nativeButton={false} size="sm" variant="ghost" render={<a href={addressUrl(address ?? "")} target="_blank" rel="noreferrer" />}>Explorer ↗</Button>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-col gap-5 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <Identicon address={address ?? ""} size={56} />
+            <div className="min-w-0">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Passkey wallet · Tempo testnet</div>
+              <div className="mt-1 flex items-center gap-2">
+                <code className="truncate font-mono text-sm">{address}</code>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Copy address"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(address ?? "");
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </button>
+                <a href={addressUrl(address ?? "")} target="_blank" rel="noreferrer" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="View on explorer">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="font-mono text-4xl font-semibold tabular-nums">
+                  {balance.data === undefined ? <Loader2 className="inline h-6 w-6 animate-spin" /> : formatAmount(balance.data)}
+                </span>
+                <span className="text-sm text-muted-foreground">AcmeUSD</span>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setFlow("deposit")}>Deposit</Button>
+            <Button variant="outline" onClick={() => setFlow("withdraw")} disabled={!balance.data}>Withdraw</Button>
+            <Button variant="outline" onClick={() => setFlow("send")} disabled={!balance.data}>Send</Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Network fees</CardTitle>
-            <CardDescription>Tempo has no gas token — fees are paid in stablecoins. Every AcmeUSD transaction from this app already pays its fee in AcmeUSD; setting it as your default covers other apps too.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>Default fee token: {feeToken.isLoading ? "…" : feeIsAcme ? <span className="font-medium text-emerald-700">AcmeUSD ✓</span> : <span className="text-muted-foreground">not set (pathUSD fallback)</span>}</p>
-            {!feeIsAcme && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={setFeeToken.isPending || !balance.data}
-                onClick={() => setFeeToken.mutate({ token: ACME_USD, feeToken: ACME_USD }, { onSuccess: () => feeToken.refetch() })}
-              >
-                {setFeeToken.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Pay all fees in AcmeUSD
-              </Button>
-            )}
-            {setFeeToken.error && <p className="text-xs text-destructive">{setFeeToken.error.message.split("\n")[0]}</p>}
-            {!balance.data && <p className="text-xs text-muted-foreground">Buy some AcmeUSD first — the fee for this transaction is paid in AcmeUSD.</p>}
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ActivityTable rows={activity.data?.rows ?? []} loading={activity.isLoading} />
+          {activity.error && <p className="mt-2 text-xs text-destructive">{(activity.error as Error).message}</p>}
+        </CardContent>
+      </Card>
+
+      <DepositDialog open={flow === "deposit"} onOpenChange={(o) => setFlow(o ? "deposit" : null)} />
+      <WithdrawDialog open={flow === "withdraw"} onOpenChange={(o) => setFlow(o ? "withdraw" : null)} />
+      <SendDialog open={flow === "send"} onOpenChange={(o) => setFlow(o ? "send" : null)} />
     </div>
   );
 }

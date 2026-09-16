@@ -29,6 +29,8 @@ export type MemoTransfer = {
 export interface Chain {
   readonly token: Address;
   readonly treasury: Address;
+  /** Underlying read client (log queries for the activity index). */
+  readonly client: Pick<ChainClient, "getBlockNumber" | "getLogs" | "getBlock">;
   mintWithMemo(p: { to: Address; amount: bigint; memo: Hex; nonceKey: bigint }): Promise<TxOutcome>;
   burnWithMemo(p: { amount: bigint; memo: Hex; nonceKey: bigint }): Promise<TxOutcome>;
   /** All AcmeUSD `TransferWithMemo` logs carrying this memo since `fromBlock`. */
@@ -85,7 +87,7 @@ type TempoClient = ReturnType<typeof tempoClientFactory>;
 /** The slice of the viem Tempo client the adapter uses (narrow so tests can fake it). */
 export type ChainClient = Pick<
   TempoClient,
-  "writeContractSync" | "getLogs" | "getTransactionReceipt" | "getBlockNumber" | "readContract" | "nonce"
+  "writeContractSync" | "getLogs" | "getTransactionReceipt" | "getBlockNumber" | "getBlock" | "readContract" | "nonce"
 >;
 
 export type CreateChainOptions = {
@@ -136,6 +138,7 @@ export function createChain(opts: CreateChainOptions = {}): Chain {
   return {
     token,
     treasury,
+    client,
 
     async mintWithMemo({ to, amount, memo, nonceKey }) {
       if (chaos === "mint_revert") return { kind: "reverted", txHash: null, reason: "CHAOS=mint_revert" };

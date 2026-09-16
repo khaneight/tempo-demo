@@ -50,6 +50,11 @@ export function mockChain() {
   const chain: Chain = {
     token: TOKEN,
     treasury: TREASURY,
+    client: {
+      getBlockNumber: async () => block,
+      getLogs: (async () => []) as never,
+      getBlock: (async () => ({ timestamp: 0n })) as never,
+    },
     async mintWithMemo({ to, amount, memo, nonceKey }) {
       return send("mint", nonceKey, ZERO, to.toLowerCase() as Address, amount, memo);
     },
@@ -100,7 +105,7 @@ export function mockChain() {
 }
 
 export async function resetDb() {
-  await db.execute(sql`truncate table onramp_orders, offramp_orders, users, kv restart identity cascade`);
+  await db.execute(sql`truncate table onramp_orders, offramp_orders, transfer_events, users, kv restart identity cascade`);
 }
 
 export async function makeUser(seed = "aa"): Promise<Address> {
