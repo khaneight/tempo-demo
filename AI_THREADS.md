@@ -143,6 +143,12 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > i noticed i can create multiple wallets with a passkey but cant switch between them, make that possible on wallet page to switch between wallets and create new wallets under that identity
 
+### P16 · UI polish round 2
+
+> -make the icon clickable inside button with carot to make obvious the switching feature, also allow switching using icon in nav bar
+> - make deposit/withdraw/transfer success/failure screens within the same popup once transaction is sent
+> - in send option have dropdown options of your own wallets, validate address and show identicon of recipient, with confirmation screen
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

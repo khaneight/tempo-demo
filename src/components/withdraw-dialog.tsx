@@ -1,35 +1,35 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { Hex } from "viem";
 import { AmountInput } from "@/components/amount-input";
 import { OfframpTransferStep } from "@/components/offramp-transfer-step";
-import { OFFRAMP_STEPS, StatusBadge, Timeline, TxLink } from "@/components/order-status";
+import { Amount, OFFRAMP_STEPS, Timeline, TxLink } from "@/components/order-status";
+import { ResultScreen } from "@/components/result-screen";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FEE_BUFFER, formatAmount } from "@/lib/amounts";
 import { api, type OfframpDto } from "@/lib/api-client";
+import { useOrder } from "@/lib/use-order";
 import { useAcmeBalance, useWallet } from "@/lib/use-wallet";
 
 /**
  * Withdraw (cash out) in one popup: 1) amount + bank → order, 2) sign the transfer
- * with the passkey, 3) server verifies/pays/burns and the result is shown inline.
+ * with the passkey, 3) the server verifies / pays out / burns while this popup polls
+ * the order and shows the outcome.
  */
 export function WithdrawDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const qc = useQueryClient();
   const { address } = useWallet();
   const balance = useAcmeBalance(address);
   const [amount, setAmount] = useState("");
   const [bank, setBank] = useState({ accountName: "", routing: "021000021", account: "000123456789" });
-  const [order, setOrder] = useState<OfframpDto | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const o = useOrder("offramp", null);
   const max = balance.data !== undefined && balance.data > FEE_BUFFER ? balance.data - FEE_BUFFER : 0n;
 
   async function create(e: React.FormEvent) {
@@ -38,7 +38,7 @@ export function WithdrawDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     setError(null);
     try {
       const r = await api<{ order: OfframpDto }>("/api/offramp", { method: "POST", json: { amount, bank } });
-      setOrder(r.order);
+      o.setOrder(r.order);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -46,32 +46,17 @@ export function WithdrawDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     }
   }
 
-  async function submitted(txHash: Hex) {
-    if (!order) return;
-    setBusy(true);
-    try {
-      const r = await api<{ order: OfframpDto; message?: string }>(`/api/offramp/${order.id}/process`, { method: "POST", json: { txHash } });
-      setOrder(r.order);
-      setMessage(r.message ?? null);
-      void qc.invalidateQueries({ queryKey: ["activity"] });
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function close(o: boolean) {
-    onOpenChange(o);
-    if (!o) {
-      setOrder(null);
+  function close(v: boolean) {
+    onOpenChange(v);
+    if (!v) {
+      o.setOrder(null);
       setAmount("");
       setError(null);
-      setMessage(null);
     }
   }
 
-  const awaiting = order && (order.status === "created" || order.status === "expired");
+  const order = o.order;
+  const awaiting = !!order && (order.status === "created" || order.status === "expired");
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -79,7 +64,7 @@ export function WithdrawDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <DialogHeader>
           <DialogTitle>Withdraw</DialogTitle>
           <DialogDescription>
-            {order ? <>Cash out <span className="font-mono">{formatAmount(BigInt(order.amount))}</span> AcmeUSD to your bank.</> : "Send AcmeUSD back to ACME and receive (test) USD. You'll sign one transfer with your passkey."}
+            {order ? <>Cashing out <Amount value={order.amount} /> to your bank.</> : "Send AcmeUSD back to ACME and receive (test) USD. You'll sign one transfer with your passkey."}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,24 +97,30 @@ export function WithdrawDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
         {order && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Timeline steps={OFFRAMP_STEPS} status={order.status} kind="offramp" />
-              <StatusBadge status={order.status} />
-            </div>
-            {awaiting && <OfframpTransferStep order={order} onSubmitted={submitted} busy={busy} />}
-            {busy && !awaiting && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Verifying and paying out…</p>}
-            {message && <p className="text-sm text-muted-foreground">{message}</p>}
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {(order.transferTxHash || order.burnTxHash) && (
-              <div className="flex flex-col gap-1">
-                <TxLink hash={order.transferTxHash} label="Your transfer" />
-                <TxLink hash={order.burnTxHash} label="Burn transaction" />
-              </div>
+            <Timeline steps={OFFRAMP_STEPS} status={order.status} kind="offramp" />
+            {awaiting && <OfframpTransferStep order={order} onSubmitted={(txHash: Hex) => o.retry.mutate({ txHash })} busy={o.busy} />}
+            {!awaiting && o.pending && (
+              <ResultScreen kind="pending" title={order.status === "transfer_verified" ? "Transfer verified — paying out…" : order.status === "credited" || order.status === "burning" ? "USD sent — retiring tokens…" : "Verifying your transfer…"} actions={<Button variant="ghost" onClick={() => close(false)}>Close — I&apos;ll check back</Button>}>
+                {o.message ?? "You can close this; the order keeps going and shows up in Activity."}
+              </ResultScreen>
             )}
-            <div className="flex items-center justify-between">
-              <Link href={`/orders/offramp/${order.id}`} className="text-xs text-muted-foreground underline decoration-dotted">Open order page</Link>
-              <Button variant="outline" onClick={() => close(false)}>{order.status === "burned" ? "Done" : "Close — I'll check back later"}</Button>
-            </div>
+            {o.state === "done" && (
+              <ResultScreen kind="success" title={<>Sent <Amount value={order.amount} /> to your bank</>} actions={<Button onClick={() => close(false)}>Done</Button>}>
+                <div className="flex flex-col items-center gap-1">
+                  <TxLink hash={order.transferTxHash} label="Your transfer" />
+                  <TxLink hash={order.burnTxHash} label="Burn transaction" />
+                </div>
+              </ResultScreen>
+            )}
+            {o.state === "review" && (
+              <ResultScreen kind="attention" title="Needs a human look" actions={<Button variant="outline" onClick={() => close(false)}>Close</Button>}>
+                {order.creditedAt ? "Your USD has been sent; ACME will finish the bookkeeping." : "Your tokens are safe with ACME; support will finish this manually."} {order.lastError}
+              </ResultScreen>
+            )}
+            {o.message && awaiting && <p className="text-center text-sm text-muted-foreground">{o.message}</p>}
+            <p className="text-center text-xs text-muted-foreground">
+              <Link href={`/orders/offramp/${order.id}`} className="underline decoration-dotted">Order {order.id.slice(0, 8)}</Link>
+            </p>
           </div>
         )}
       </DialogContent>

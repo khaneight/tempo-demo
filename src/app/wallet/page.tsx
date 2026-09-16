@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { ActivityTable, type ActivityDto } from "@/components/activity-table";
 import { DepositDialog } from "@/components/deposit-dialog";
@@ -34,14 +34,21 @@ function Inner() {
       <Card>
         <CardContent className="flex flex-col gap-5 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <Identicon address={address ?? ""} size={56} />
+            <button
+              type="button"
+              onClick={() => setFlow("wallets")}
+              className="group flex items-center gap-2 rounded-xl border bg-background p-1.5 pr-2.5 hover:bg-muted"
+              title="Switch wallet"
+            >
+              <Identicon address={address ?? ""} size={48} />
+              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+            </button>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <span>{current?.label || "Passkey wallet"} · Tempo testnet</span>
-                <button type="button" onClick={() => setFlow("wallets")} className="rounded border px-1.5 py-0.5 normal-case tracking-normal hover:bg-muted">
-                  {wallets.length > 1 ? `Switch (${wallets.length})` : "Wallets"}
-                </button>
-              </div>
+              <button type="button" onClick={() => setFlow("wallets")} className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                <span>{current?.label || "Passkey wallet"}</span>
+                <ChevronDown className="h-3 w-3" />
+                {wallets.length > 1 && <span className="rounded-full bg-muted px-1.5 normal-case tracking-normal">{wallets.length} wallets</span>}
+              </button>
               <div className="mt-1 flex items-center gap-2">
                 <code className="truncate font-mono text-sm">{address}</code>
                 <button
