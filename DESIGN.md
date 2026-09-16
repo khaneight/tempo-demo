@@ -71,6 +71,9 @@ What is *not* automated on purpose: `needs_review` orders. They are rare, always
 - **Chain adapter seam** (`src/lib/chain.ts`) isolates viem; tests run the real state machines against Postgres with a mock chain that enforces the nonce rule and simulates lost responses, reverts, rejections and lagging RPC reads. `CHAOS=` env injects the same faults into the real adapter for manual testing.
 - **Observability = the admin page**: per-status counts, pending obligations in both directions, and three reconciliations (supply drift must be 0; treasury − pending burns = unattributed deposits; tokens held outside known users).
 
+## 4b. Wallet activity (unified timeline)
+The wallet shows one timeline of deposits, withdrawals, sends, receives and network fees. Deposits/withdrawals come from the ledger (with their fiat-side status); sends/receives/fees come from on-chain `Transfer` logs. Those logs are indexed **incrementally per wallet** into `transfer_events` (`users.synced_block` remembers where the last sync stopped; the RPC caps `eth_getLogs` at ~100k blocks, so the sync walks 50k-block chunks from the token's deploy block the first time and only new blocks afterwards). The merge is a pure function: a log whose tx hash belongs to an order is not shown twice; mints from `0x0` that the ledger doesn't know become "received from ACME (mint)" — the same signal the admin's supply-drift check catches. Filtering (type / status) and sorting (date / amount) happen client-side over the fetched rows.
+
 ## 5. Admin liabilities
 | | source |
 |---|---|
