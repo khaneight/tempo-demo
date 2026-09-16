@@ -41,6 +41,13 @@ describe("memo / nonce key", () => {
   });
 });
 
+describe("env", () => {
+  it("treats blank variables as unset (Vercel UI saves empty values)", async () => {
+    const { withoutBlanks } = await import("@/lib/env");
+    expect(withoutBlanks({ A: "", B: "  ", C: " x ", D: undefined })).toEqual({ C: "x" });
+  });
+});
+
 describe("classifyError", () => {
   it("maps nonce-too-low to a landed signal", () => {
     expect(classifyError(new Error("nonce too low: next nonce 1"))).toMatchObject({ kind: "rejected", nonceTooLow: true });

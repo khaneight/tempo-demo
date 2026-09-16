@@ -125,6 +125,12 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > i added TEMPO_ prefix to the neon db env vars
 
+### P13 · first production deploy
+
+> getting zod error for DATABASE_URL in registration flow ensure its fixed everywhere
+
+> check the vercel logs and fix *(pasted a Vercel request log: `POST /api/auth/register/options` → 500 on `tempo-demo-beta.vercel.app`, deployment `dpl_B7LWdzGu57uwQNDwEvNtuxWhZFHf`)*
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

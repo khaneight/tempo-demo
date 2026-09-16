@@ -46,11 +46,22 @@ function relyingParty(e: z.infer<typeof serverSchema>): { RP_ID: string; ORIGIN:
   return { RP_ID, ORIGIN };
 }
 
+/** Vercel's UI happily saves empty values; treat "" as unset so optional vars fall back and required ones say "missing". */
+export function withoutBlanks(src: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(src)) if (v !== undefined && v.trim() !== "") out[k] = v.trim();
+  return out;
+}
+
 let cached: ServerEnv | undefined;
 export function env(): ServerEnv {
   if (!cached) {
-    const parsed = serverSchema.parse(process.env);
-    cached = { ...parsed, ...relyingParty(parsed) };
+    const result = serverSchema.safeParse(withoutBlanks(process.env));
+    if (!result.success) {
+      const problems = result.error.issues.map((i) => `${i.path.join(".") || "env"}: ${i.message}`).join("; ");
+      throw new Error(`Invalid server environment — ${problems}`);
+    }
+    cached = { ...result.data, ...relyingParty(result.data) };
   }
   return cached;
 }
