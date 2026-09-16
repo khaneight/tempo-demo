@@ -37,10 +37,12 @@ export type ServerEnv = Omit<z.infer<typeof serverSchema>, "RP_ID" | "ORIGIN"> &
  * so passkeys work on every deployment without per-branch config. Locally: localhost.
  */
 function relyingParty(e: z.infer<typeof serverSchema>): { RP_ID: string; ORIGIN: string } {
+  // Previews use the stable branch alias (VERCEL_BRANCH_URL) so passkeys survive redeploys of the branch;
+  // production uses the production domain.
   const vercelHost =
     process.env.VERCEL_ENV === "production"
       ? (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL)
-      : process.env.VERCEL_URL;
+      : (process.env.VERCEL_BRANCH_URL ?? process.env.VERCEL_URL);
   const ORIGIN = e.ORIGIN ?? (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
   const RP_ID = e.RP_ID ?? new URL(ORIGIN).hostname;
   return { RP_ID, ORIGIN };
@@ -65,10 +67,3 @@ export function env(): ServerEnv {
   }
   return cached;
 }
-
-/** Public config that is safe to ship to the browser. */
-export const publicEnv = {
-  ACME_USD_ADDRESS: (process.env.NEXT_PUBLIC_ACME_USD_ADDRESS ?? "").toLowerCase() as `0x${string}`,
-  TREASURY_ADDRESS: (process.env.NEXT_PUBLIC_TREASURY_ADDRESS ?? "").toLowerCase() as `0x${string}`,
-  EXPLORER_URL: process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://explore.testnet.tempo.xyz",
-};

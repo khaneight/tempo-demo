@@ -41,18 +41,25 @@ describe("admin cookie", () => {
 });
 
 describe("linked wallets cookie", () => {
-  it("round-trips, rejects tampering and expiry, and caps the list", async () => {
+  it("round-trips, is bound to the session, rejects tampering, expires per entry, and caps the list", async () => {
     const { decodeLinked, encodeLinked } = await import("@/lib/auth");
-    const w = [{ a: "0x59ef6877c5b6dd640ce9e1f94931e9eab40333ff" as const, c: "cred-1" }];
-    const v = encodeLinked(w);
-    expect(decodeLinked(v)).toEqual(w);
+    const now = Date.now();
+    const t = Math.floor(now / 1000);
+    const w = [{ a: "0x59ef6877c5b6dd640ce9e1f94931e9eab40333ff" as const, c: "cred-1", t }];
+    const v = encodeLinked(w, "sess-A", now);
+    expect(decodeLinked(v, "sess-A", now)).toEqual(w);
+    expect(decodeLinked(v, "sess-B", now)).toEqual([]); // another session's cookie is worthless
+    expect(decodeLinked(v, null, now)).toEqual(w); // link route may carry entries over
     const [payload, sig] = v.split(".");
-    expect(decodeLinked(`${payload}x.${sig}`)).toEqual([]);
-    expect(decodeLinked(`${payload}.${sig.slice(1)}a`)).toEqual([]);
-    expect(decodeLinked(v, Date.now() + 25 * 60 * 60 * 1000)).toEqual([]); // expired
-    expect(decodeLinked(undefined)).toEqual([]);
-    const many = Array.from({ length: 30 }, (_, i) => ({ a: `0x${i.toString(16).padStart(40, "0")}` as `0x${string}`, c: `c${i}` }));
-    expect(decodeLinked(encodeLinked(many))).toHaveLength(20);
+    expect(decodeLinked(`${payload}x.${sig}`, "sess-A", now)).toEqual([]);
+    expect(decodeLinked(`${payload}.${sig.slice(1)}a`, "sess-A", now)).toEqual([]);
+    expect(decodeLinked(v, "sess-A", now + 25 * 60 * 60 * 1000)).toEqual([]); // entry expired
+    expect(decodeLinked(undefined, "sess-A", now)).toEqual([]);
+    // Per-entry expiry: an old link is dropped while a fresh one survives re-encoding.
+    const mixed = [{ a: w[0].a, c: "old", t: t - 25 * 60 * 60 }, { a: "0x1111111111111111111111111111111111111111" as const, c: "new", t }];
+    expect(decodeLinked(encodeLinked(mixed, "s", now), "s", now).map((x) => x.c)).toEqual(["new"]);
+    const many = Array.from({ length: 30 }, (_, i) => ({ a: `0x${i.toString(16).padStart(40, "0")}` as `0x${string}`, c: `c${i}`, t }));
+    expect(decodeLinked(encodeLinked(many, "s", now), "s", now)).toHaveLength(20);
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type OfframpDto, type OnrampDto } from "./api-client";
 import { uiState } from "@/components/order-status";
 
@@ -21,8 +21,14 @@ export function useOrder<K extends Kind>(kind: K, initial: Dto<K> | null) {
   const id = order?.id;
   const state = order ? uiState(order.status as never) : null;
   const pending = state === "pending" || state === "in_progress";
+  // A poll/retry that resolves after the dialog was closed (order cleared) or switched must not resurrect it.
+  const idRef = useRef(id);
+  useEffect(() => {
+    idRef.current = id;
+  }, [id]);
 
   const apply = (r: ProcessResponse<K>) => {
+    if (idRef.current !== r.order.id) return;
     setOrder(r.order);
     setMessage(r.message ?? null);
     if (uiState(r.order.status as never) === "done") void qc.invalidateQueries({ queryKey: ["activity"] });

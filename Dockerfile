@@ -30,7 +30,7 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 # migrations + runner (tsx + drizzle are in node_modules of the standalone bundle only if traced; ship them explicitly)
 COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/src/db/migrate.ts ./src/db/migrate.ts
+COPY --from=build /app/src/db ./src/db
 COPY --from=deps /app/node_modules ./node_modules_full
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh && chown -R node:node /app

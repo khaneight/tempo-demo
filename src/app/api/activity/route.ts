@@ -10,6 +10,6 @@ export const maxDuration = 30;
 /** Unified wallet timeline: deposits, withdrawals, sends, receives, fees. */
 export const GET = handle(async (req) => {
   const user = await requireUser(req);
-  const { rows, syncedBlock } = await getActivity(user.address);
-  return json({ rows, syncedBlock });
+  const { rows, syncedBlock, syncError } = await getActivity(user.address);
+  return json({ rows, syncedBlock, syncError });
 });

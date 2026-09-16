@@ -6,10 +6,9 @@ import { offrampOrders, onrampOrders, users } from "@/db/schema";
 import { chain as defaultChain, type Chain, FEE_MANAGER, ZERO } from "./chain";
 import { env } from "./env";
 import { pgKv } from "./kv-postgres";
-import { getOrder, listByStatus, transition } from "./orders-db";
+import { getOrder, listByStatus, OrderLockedError, transition } from "./orders-db";
 import { processOfframp, type Deps as OfframpDeps } from "./offramp";
 import { processOnramp, type Deps as OnrampDeps } from "./onramp";
-import { OrderLockedError } from "./orders-db";
 
 /**
  * ACME's liabilities, computed live from both sources of truth and reconciled.
@@ -23,10 +22,14 @@ export type Liabilities = {
   chain: { totalSupply: bigint; treasuryBalance: bigint; feeAmmBalance: bigint };
   /** Registered wallets (passkeys created here). */
   users: { address: string; balance: bigint; createdAt: Date }[];
-  /** Addresses that have ever received AcmeUSD but never registered here (P2P recipients, other apps). */
+  /** Addresses that have ever received AcmeUSD but never registered here (P2P recipients, other apps); top 200 by balance. */
   unknownHolders: { address: string; balance: bigint }[];
-  /** Block up to which the holder set has been indexed. */
+  /** Sum over ALL unknown holders (not just the listed ones). */
+  unknownTotal: bigint;
+  /** Block up to which the holder set has been indexed; 0 = index unavailable (RPC failure) → treat holder data as stale. */
   holdersSyncedBlock: bigint;
+  /** Wall-clock time this snapshot was computed (ms). */
+  fetchedAt: number;
   fiat: { reservesHeld: bigint; tokensOwed: bigint; fiatOwed: bigint; pendingBurns: bigint; expectedSupply: bigint };
   counts: { onramp: Record<string, number>; offramp: Record<string, number> };
   reconciliation: {
@@ -99,9 +102,11 @@ export async function computeLiabilities(ch: Chain = defaultChain(), deployBlock
   const userList = userRows.map((u, i) => ({ address: u.address, balance: balances[i], createdAt: u.createdAt }));
 
   const known = new Set([...userRows.map((u) => u.address.toLowerCase()), ch.treasury.toLowerCase(), FEE_MANAGER, ZERO]);
-  const unknownAddrs = holderIndex.holders.filter((a) => !known.has(a)).slice(0, 200);
+  const unknownAddrs = holderIndex.holders.filter((a) => !known.has(a));
   const unknownBalances = await Promise.all(unknownAddrs.map((a) => ch.balanceOf(a as `0x${string}`)));
-  const unknownHolders = unknownAddrs.map((address, i) => ({ address, balance: unknownBalances[i] })).sort((a, b) => Number(b.balance - a.balance));
+  const unknownAll = unknownAddrs.map((address, i) => ({ address, balance: unknownBalances[i] })).sort((a, b) => Number(b.balance - a.balance));
+  const unknownTotal = unknownAll.reduce((a, u) => a + u.balance, 0n);
+  const unknownHolders = unknownAll.slice(0, 200);
 
   // needs_review rows are money in flight too: an onramp under review has captured fiat (tokens owed);
   // an offramp under review that was already credited has paid out fiat and still holds tokens to burn.
@@ -127,7 +132,9 @@ export async function computeLiabilities(ch: Chain = defaultChain(), deployBlock
     chain: { totalSupply, treasuryBalance, feeAmmBalance },
     users: userList,
     unknownHolders,
+    unknownTotal,
     holdersSyncedBlock: holderIndex.block,
+    fetchedAt: Date.now(),
     fiat: {
       reservesHeld: minted - paidOut,
       tokensOwed: on.sum("payment_captured", "minting", "needs_review"),
@@ -189,7 +196,10 @@ export async function reprocessStuck(olderThanMs = 60_000, deps: { onramp?: Onra
     (o) => o.updatedAt.getTime() < cutoff,
   );
   const results: { kind: "onramp" | "offramp"; id: string; before: string; after: string }[] = [];
+  // The route has a 60 s ceiling: stop early and let the next sweep continue rather than lose the result list.
+  const deadline = Date.now() + 45_000;
   for (const o of onramps) {
+    if (Date.now() > deadline) break;
     try {
       const r = await processOnramp(o.id, deps.onramp);
       results.push({ kind: "onramp", id: o.id, before: o.status, after: r.order.status });
@@ -198,6 +208,7 @@ export async function reprocessStuck(olderThanMs = 60_000, deps: { onramp?: Onra
     }
   }
   for (const o of offramps) {
+    if (Date.now() > deadline) break;
     try {
       const r = await processOfframp(o.id, {}, deps.offramp);
       results.push({ kind: "offramp", id: o.id, before: o.status, after: r.order.status });

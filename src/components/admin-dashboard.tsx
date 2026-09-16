@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Identicon } from "@/components/identicon";
 import { StatusBadge } from "@/components/order-status";
@@ -19,7 +19,9 @@ export type AdminData = {
   chain: { totalSupply: S; treasuryBalance: S; feeAmmBalance: S };
   users: { address: string; balance: S; createdAt: string }[];
   unknownHolders: { address: string; balance: S }[];
+  unknownTotal: S;
   holdersSyncedBlock: S;
+  fetchedAt: number;
   fiat: { reservesHeld: S; tokensOwed: S; fiatOwed: S; pendingBurns: S; expectedSupply: S };
   counts: { onramp: Record<string, number>; offramp: Record<string, number> };
   reconciliation: { supplyDrift: S; unattributedTreasury: S; heldByOutsiders: S };
@@ -60,10 +62,14 @@ function Recon({ label, value, expectZero, explain }: { label: string; value: S;
 export function AdminDashboard({ initial }: { initial: AdminData }) {
   const router = useRouter();
   const qc = useQueryClient();
+  // Times are rendered only after hydration (locale/tz/"now" differ between server and client).
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
   const q = useQuery({
     queryKey: ["admin-liabilities"],
     queryFn: () => api<AdminData>("/api/admin/liabilities"),
     initialData: initial,
+    initialDataUpdatedAt: initial.fetchedAt,
+    staleTime: REFRESH_MS, // the server-rendered snapshot is fresh; don't refetch immediately on mount
     // Keep it live: poll, and refetch whenever the tab regains focus or the network comes back.
     refetchInterval: REFRESH_MS,
     refetchOnWindowFocus: true,
@@ -82,7 +88,8 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
     return (hideZero ? rows.filter((r) => BigInt(r.balance) !== 0n) : rows).sort((a, b) => Number(BigInt(b.balance) - BigInt(a.balance)));
   }, [data, hideZero]);
   const userTotal = data.users.reduce((a, u) => a + BigInt(u.balance), 0n);
-  const unknownTotal = data.unknownHolders.reduce((a, u) => a + BigInt(u.balance), 0n);
+  const unknownTotal = BigInt(data.unknownTotal);
+  const holdersStale = BigInt(data.holdersSyncedBlock) === 0n;
 
   async function act(fn: () => Promise<unknown>, done: (r: unknown) => string) {
     setBusy(true);
@@ -121,7 +128,7 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             Live from Tempo testnet + the order ledger · refreshes every {REFRESH_MS / 1000}s
             {q.isFetching && <Loader2 className="h-3 w-3 animate-spin" />}
-            {q.dataUpdatedAt > 0 && <span className="font-mono text-xs">updated {new Date(q.dataUpdatedAt).toLocaleTimeString()}</span>}
+            {mounted && q.dataUpdatedAt > 0 && <span className="font-mono text-xs">updated {new Date(q.dataUpdatedAt).toLocaleTimeString()}</span>}
           </p>
         </div>
         <div className="flex gap-2">
@@ -136,7 +143,7 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
         <Stat label="AcmeUSD in circulation (user liabilities)" value={tok(data.chain.totalSupply)} sub="on-chain totalSupply" />
         <Stat label="USD reserves held (corporate)" value={usd(data.fiat.reservesHeld)} sub="Σ onramps minted − Σ offramps paid out" />
         <Stat label="Held by registered users" value={tok(userTotal.toString())} sub={`${data.users.length} wallets`} />
-        <Stat label="Held by unknown addresses" value={tok(unknownTotal.toString())} sub={`${data.unknownHolders.length} addresses never registered here`} />
+        <Stat label="Held by unknown addresses" value={tok(unknownTotal.toString())} sub={holdersStale ? "⚠ holder index unavailable — showing last known" : `${data.unknownHolders.length} addresses never registered here`} />
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -223,7 +230,7 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{u.joined ? new Date(u.joined).toLocaleString() : "—"}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{u.joined && mounted ? new Date(u.joined).toLocaleString() : u.joined ? "…" : "—"}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatAmount(BigInt(u.balance))}</TableCell>
                 </TableRow>
               ))}

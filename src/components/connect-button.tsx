@@ -28,13 +28,12 @@ export function ConnectButtons({
   size?: "default" | "lg" | "sm";
   onConnected?: () => void;
   compact?: boolean;
-  /** Show even while wagmi is connected (server session expired): disconnect, then run the ceremony again. */
+  /** Show even while wagmi is connected (server session expired): re-run the ceremony without dropping other wallets. */
   reauth?: boolean;
 }) {
   const qc = useQueryClient();
   const [connector] = useConnectors();
   const { connectAsync, isPending } = useConnect();
-  const { disconnectAsync } = useDisconnect();
   const { isConnected } = useWallet();
   const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +42,15 @@ export function ConnectButtons({
     setMode(m);
     setError(null);
     try {
-      if (isConnected) await disconnectAsync();
-      await connectAsync({
-        connector,
-        ...(m === "create" ? { capabilities: { method: "register", name: `AcmeUSD wallet · ${new Date().toLocaleDateString()}` } } : {}),
-      } as Parameters<typeof connectAsync>[0]);
+      const capabilities = m === "create" ? { method: "register", name: `AcmeUSD wallet · ${new Date().toLocaleDateString()}` } : undefined;
+      if (isConnected) {
+        // Re-auth while connected (server session expired): talk to the provider directly so the
+        // SDK's other remembered accounts are kept — a wagmi disconnect would wipe them all.
+        const provider = (await connector.getProvider()) as { request(a: { method: string; params?: unknown[] }): Promise<unknown> };
+        await provider.request({ method: "wallet_connect", params: [capabilities ? { capabilities } : {}] });
+      } else {
+        await connectAsync({ connector, ...(capabilities ? { capabilities } : {}) } as Parameters<typeof connectAsync>[0]);
+      }
       await linkCurrentSession();
       await qc.invalidateQueries({ queryKey: ["session"] });
       onConnected?.();
@@ -86,7 +89,7 @@ export function DisconnectButton() {
       variant="ghost"
       size="sm"
       onClick={async () => {
-        await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+        await Promise.all([api("/api/auth/logout", { method: "POST" }).catch(() => {}), api("/api/session/link", { method: "DELETE" }).catch(() => {})]);
         await disconnectAsync();
         await qc.invalidateQueries({ queryKey: ["session"] });
       }}

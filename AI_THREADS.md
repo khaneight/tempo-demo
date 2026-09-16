@@ -163,6 +163,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > ensure we are showing unknown addresses in admin dash as well with little warning badge with tooltip unknown address, have option to hide 0 balance addresses, also add their identicon in table, remove refresh button and just ensure it refreshes data appropriately
 
+### P20 · final review
+
+> cool now do a final review of platform and codebase, then update the AGENTS file for future contributors
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong
@@ -257,5 +261,14 @@ New suites: `chain.test.ts` (12: exactly what mint/burn send — function, args,
 
 ### Tests: 64 → 70
 Activity merge + incremental sync, linked-wallets cookie, token-scoped liabilities, refusing wrong-token orders, blank-env handling.
+
+---
+
+## Session 5 — 2026-09-16 — Admin holders, final review, contributor guide · prompts P19–P20
+
+### How the AI was steered
+- P19 asked for unknown holders on the admin page. The AI built an incremental index of *all* `Transfer` logs (holder set + cursor in `kv`) rather than querying balances ad hoc, so the "held outside registered users" reconciliation now has a list behind it — and the two views cross-check (unknown total = −Reconciliation C).
+- P20: a read-only review agent was pointed at everything written since the security review (activity index, holders, linked-wallets auth, multi-wallet switching, dialogs, migrations, CI/Docker/docs) with a fixed checklist. Its two high findings were real and got fixed: (1) **the linked-wallets cookie was a session-less bearer** — after Sign out it still authorized `x-wallet` API calls for 24 h; now a live passkey session is required, the cookie is bound to that session's token hash, each entry expires on its own, and sign-out clears it; (2) **the Docker image could not start** because the migrator's new `./url` import wasn't copied — verified by rebuilding and running the container. Mediums applied: bounded per-request activity sync with in-process dedupe and parallel block-timestamp fetches, pre-scoping `transfer_events` rows reclaimed on re-sync, admin snapshot no longer refetched on mount (staleTime + `initialDataUpdatedAt`) and time strings rendered only after hydration, unknown-holder total computed over all holders before truncation with a staleness flag, `useOrder` ignoring late results for a closed dialog, re-auth no longer wiping the SDK's other accounts, preview passkeys bound to the stable branch URL, a time budget on the sweep, dead code removed. The AI's attempt to enable viem HTTP batching was reverted when the Tempo transport's config didn't accept it — checked, not assumed.
+- `AGENTS.md` was written for future contributors: the invariants that protect money, a map of the code, the Tempo facts that shaped it, and how to work on it. `CLAUDE.md` points at it.
 
 ---

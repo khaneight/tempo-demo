@@ -20,7 +20,7 @@ import { useWallet } from "./use-wallet";
  * We also keep a small registry in localStorage ({ address, credentialId, label })
  * so the list and labels survive "Sign out" (which wipes the SDK store).
  */
-export type KnownWallet = { address: `0x${string}`; credentialId: string; label: string; addedAt: number };
+export type KnownWallet = { address: `0x${string}`; credentialId: string; label: string };
 
 const KEY = "acmeusd.wallets";
 const listeners = new Set<() => void>();
@@ -42,17 +42,15 @@ function write(next: KnownWallet[]) {
   } catch {}
   listeners.forEach((l) => l());
 }
-export function rememberWallet(w: Omit<KnownWallet, "addedAt">) {
+export function rememberWallet(w: KnownWallet) {
   const cur = read();
   const address = w.address.toLowerCase() as `0x${string}`;
   const existing = cur.find((x) => x.address === address);
-  write(existing ? cur.map((x) => (x.address === address ? { ...x, credentialId: w.credentialId, label: x.label || w.label } : x)) : [...cur, { ...w, address, addedAt: Date.now() }]);
+  if (existing && existing.credentialId === w.credentialId && (existing.label || !w.label)) return; // nothing new
+  write(existing ? cur.map((x) => (x.address === address ? { ...x, credentialId: w.credentialId, label: x.label || w.label } : x)) : [...cur, { ...w, address }]);
 }
 export function renameWallet(address: string, label: string) {
   write(read().map((x) => (x.address === address.toLowerCase() ? { ...x, label: label.trim() } : x)));
-}
-export function forgetWallet(address: string) {
-  write(read().filter((x) => x.address !== address.toLowerCase()));
 }
 const EMPTY: KnownWallet[] = [];
 
@@ -93,8 +91,12 @@ export function useWallets() {
   // Mirror the SDK's accounts (and their labels) into the registry.
   useEffect(() => {
     if (!store) return;
+    let last: readonly SdkAccount[] | null = null;
     const sync = () => {
-      for (const a of store.getState().accounts) {
+      const accounts = store.getState().accounts;
+      if (accounts === last) return; // the store fires on every change (chainId, auth…); only accounts matter here
+      last = accounts;
+      for (const a of accounts) {
         if (a.credential?.id) rememberWallet({ address: a.address as `0x${string}`, credentialId: a.credential.id, label: a.label ?? "" });
       }
     };

@@ -97,11 +97,11 @@ async function enforceLimits(userAddress: string, amount: bigint, now: Date) {
   if (BigInt(day.total) + amount > DAILY_ONRAMP_CAP) throw new HttpError(429, "Daily purchase limit reached ($50,000)");
 }
 
-export async function listOnramps(userAddress: string, token: string = defaultChain().token) {
+export async function listOnramps(userAddress: string, token: string = defaultChain().token, limit = 50) {
   return db.query.onrampOrders.findMany({
     where: and(eq(onrampOrders.userAddress, userAddress), eq(onrampOrders.token, token)),
     orderBy: desc(onrampOrders.createdAt),
-    limit: 50,
+    limit,
   });
 }
 

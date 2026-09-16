@@ -32,6 +32,10 @@ export type ActivityRow = {
 };
 
 const CHUNK = 50_000n;
+/** Work budget per request: the route has a 30 s ceiling; the next poll continues from the cursor. */
+const MAX_CHUNKS_PER_SYNC = 4;
+/** One sync per wallet per process at a time (serverless instances poll the same wallet concurrently). */
+const inFlight = new Map<string, Promise<bigint>>();
 const transferEvent = getAbiItem({ abi: Abis.tip20, name: "Transfer" });
 
 export interface LogSource {
@@ -77,31 +81,42 @@ export function viemLogSource(client: {
   };
 }
 
-/** Copy this wallet's new Transfer logs into transfer_events; returns the block synced to. */
-export async function syncTransfers(wallet: Address, src: LogSource, token: Address, deployBlock: bigint): Promise<bigint> {
+/** Copy this wallet's new Transfer logs into transfer_events; returns the block synced to (may lag `latest` if the budget ran out). */
+export function syncTransfers(wallet: Address, src: LogSource, token: Address, deployBlock: bigint): Promise<bigint> {
+  const key = `${token}:${wallet}`.toLowerCase();
+  const running = inFlight.get(key);
+  if (running) return running;
+  const p = syncTransfersInner(wallet, src, token, deployBlock).finally(() => inFlight.delete(key));
+  inFlight.set(key, p);
+  return p;
+}
+
+async function syncTransfersInner(wallet: Address, src: LogSource, token: Address, deployBlock: bigint): Promise<bigint> {
   const [u] = await db.select({ syncedBlock: users.syncedBlock, syncToken: users.syncToken }).from(users).where(eq(users.address, wallet));
   const latest = await src.getBlockNumber();
   // A cursor from another token is meaningless here: start over from this token's deploy block.
   const cursor = u?.syncToken?.toLowerCase() === token.toLowerCase() ? u?.syncedBlock : null;
   let from = (cursor ?? deployBlock - 1n) + 1n;
   if (from > latest) return latest;
-  const blockTimes = new Map<bigint, Date>();
-  while (from <= latest) {
+  let synced = from - 1n;
+  for (let i = 0; i < MAX_CHUNKS_PER_SYNC && from <= latest; i++) {
     const to = from + CHUNK - 1n < latest ? from + CHUNK - 1n : latest;
     const logs = await src.getTransferLogs({ address: token, fromBlock: from, toBlock: to, wallet });
-    for (const l of logs) {
-      if (!blockTimes.has(l.blockNumber)) blockTimes.set(l.blockNumber, await src.getBlockTimestamp(l.blockNumber));
-    }
     if (logs.length) {
+      const blocks = [...new Set(logs.map((l) => l.blockNumber))];
+      const times = await Promise.all(blocks.map((b) => src.getBlockTimestamp(b)));
+      const blockTimes = new Map(blocks.map((b, j) => [b, times[j]]));
       await db
         .insert(transferEvents)
         .values(logs.map((l) => ({ txHash: l.txHash, logIndex: l.logIndex, token: token.toLowerCase(), blockNumber: l.blockNumber, blockTime: blockTimes.get(l.blockNumber)!, from: l.from, to: l.to, amount: l.amount })))
-        .onConflictDoNothing();
+        // Rows indexed before token scoping existed carry token '' — claim them on re-sync.
+        .onConflictDoUpdate({ target: [transferEvents.txHash, transferEvents.logIndex], set: { token: token.toLowerCase() } });
     }
     await db.update(users).set({ syncedBlock: to, syncToken: token.toLowerCase() }).where(eq(users.address, wallet));
+    synced = to;
     from = to + 1n;
   }
-  return latest;
+  return synced;
 }
 
 /** Pure merge: orders + this wallet's transfer logs -> one timeline. */
@@ -143,20 +158,22 @@ export function buildActivity(p: {
   return rows.sort((a, b) => b.at.getTime() - a.at.getTime());
 }
 
-export async function getActivity(wallet: Address, deps: { chain?: Chain; source?: LogSource } = {}): Promise<{ rows: ActivityRow[]; syncedBlock: bigint | null }> {
+export async function getActivity(wallet: Address, deps: { chain?: Chain; source?: LogSource } = {}): Promise<{ rows: ActivityRow[]; syncedBlock: bigint | null; syncError: boolean }> {
   const e = env();
   const ch = deps.chain ?? defaultChain();
   let syncedBlock: bigint | null = null;
+  let syncError = false;
   try {
     const src = deps.source ?? viemLogSource(ch.client);
     syncedBlock = await syncTransfers(wallet, src, ch.token, e.TOKEN_DEPLOY_BLOCK);
   } catch (err) {
     // Serve what we have; the next load retries the sync.
+    syncError = true;
     console.warn("[activity] sync failed:", (err as Error).message.split("\n")[0]);
   }
   const [onramps, offramps, events] = await Promise.all([
-    listOnramps(wallet, ch.token),
-    listOfframps(wallet, ch.token),
+    listOnramps(wallet, ch.token, 500),
+    listOfframps(wallet, ch.token, 500),
     db
       .select()
       .from(transferEvents)
@@ -164,6 +181,6 @@ export async function getActivity(wallet: Address, deps: { chain?: Chain; source
       .orderBy(desc(transferEvents.blockNumber), desc(transferEvents.logIndex))
       .limit(500),
   ]);
-  return { rows: buildActivity({ wallet, treasury: ch.treasury, onramps, offramps, events }), syncedBlock };
+  return { rows: buildActivity({ wallet, treasury: ch.treasury, onramps, offramps, events }), syncedBlock, syncError };
 }
 

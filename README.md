@@ -45,7 +45,7 @@ Passkeys work on `localhost` out of the box. For any other host set `RP_ID` (bar
 ## Test
 
 ```bash
-pnpm test        # vitest (64 tests): state machines against a dedicated `acmeusd_test` Postgres DB with a mock chain
+pnpm test        # vitest (70+ tests): state machines against a dedicated `acmeusd_test` Postgres DB with a mock chain
                  # (double-mint / double-credit / recovery / concurrency), chain adapter contract, admin reconciliation, auth, Kv
 pnpm typecheck && pnpm lint
 ```

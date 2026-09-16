@@ -59,11 +59,11 @@ export async function createOfframp(
   return row;
 }
 
-export async function listOfframps(userAddress: string, token: string = defaultChain().token) {
+export async function listOfframps(userAddress: string, token: string = defaultChain().token, limit = 50) {
   return db.query.offrampOrders.findMany({
     where: and(eq(offrampOrders.userAddress, userAddress), eq(offrampOrders.token, token)),
     orderBy: desc(offrampOrders.createdAt),
-    limit: 50,
+    limit,
   });
 }
 

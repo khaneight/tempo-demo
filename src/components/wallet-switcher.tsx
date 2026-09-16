@@ -26,14 +26,16 @@ export function WalletSwitcher({ open, onOpenChange }: { open: boolean; onOpenCh
     query: { enabled: open && wallets.length > 0, refetchInterval: 10_000 },
   });
 
-  async function run(fn: () => Promise<void>, closeAfter = true) {
+  async function run(fn: () => Promise<void>, closeAfter = true): Promise<boolean> {
     setError(null);
     try {
       await fn();
       if (closeAfter) onOpenChange(false);
+      return true;
     } catch (e) {
       const m = (e as Error).message ?? String(e);
       setError(/not allowed|cancel|abort|focus/i.test(m) ? "Passkey prompt was cancelled — try again." : m.split("\n")[0]);
+      return false;
     }
   }
 
@@ -112,9 +114,11 @@ export function WalletSwitcher({ open, onOpenChange }: { open: boolean; onOpenCh
             className="space-y-2 rounded-lg border p-3"
             onSubmit={(e) => {
               e.preventDefault();
-              run(() => create(label.trim() || `Wallet ${wallets.length + 1}`)).then(() => {
-                setAdding(false);
-                setLabel("");
+              run(() => create(label.trim() || `Wallet ${wallets.length + 1}`)).then((ok) => {
+                if (ok) {
+                  setAdding(false);
+                  setLabel("");
+                }
               });
             }}
           >
