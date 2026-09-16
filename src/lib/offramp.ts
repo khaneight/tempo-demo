@@ -8,7 +8,7 @@ import { chain as defaultChain, type Chain, type MemoTransfer, ZERO } from "./ch
 import { creditPayout, type Bank } from "./fiat-stub";
 import { memoFromOrderId } from "./memo";
 import { nonceKeyFor } from "./nonce-key";
-import { isUniqueViolation, lockOrder, transition } from "./orders-db";
+import { assertCurrentToken, isUniqueViolation, lockOrder, transition } from "./orders-db";
 
 /**
  * Offramp: user transfers AcmeUSD to the treasury (signed with their passkey,
@@ -48,6 +48,7 @@ export async function createOfframp(
     .values({
       id,
       userAddress: p.userAddress,
+      token: deps.chain.token,
       amount: p.amount,
       memo: memoFromOrderId(id),
       createdBlock,
@@ -58,9 +59,9 @@ export async function createOfframp(
   return row;
 }
 
-export async function listOfframps(userAddress: string) {
+export async function listOfframps(userAddress: string, token: string = defaultChain().token) {
   return db.query.offrampOrders.findMany({
-    where: eq(offrampOrders.userAddress, userAddress),
+    where: and(eq(offrampOrders.userAddress, userAddress), eq(offrampOrders.token, token)),
     orderBy: desc(offrampOrders.createdAt),
     limit: 50,
   });
@@ -103,6 +104,7 @@ export async function processOfframp(id: string, opts: { txHash?: Hex } = {}, de
   // Phase 1 — decide under lock.
   const decision = await db.transaction(async (tx) => {
     const order = await lockOrder(tx, offrampOrders, id);
+    assertCurrentToken(order, deps.chain.token);
     switch (order.status) {
       case "burned":
       case "needs_review":

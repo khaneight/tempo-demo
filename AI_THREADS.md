@@ -155,6 +155,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 > - make the wallet selector button encompass the icon, address, and name of wallet. carot on left of icon. put balance on right side of row with action buttons below it
 > - remove delete and switch buttons in wallet selection and just click row with highliging, add edit button for renaming wallet next to name of wallet
 
+### P18 · prod admin audit
+
+> ok now audit the admin page correctness in prod, its showing incorrect supply drift, and is it showing all user balances currently
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

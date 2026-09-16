@@ -8,7 +8,7 @@ import { capturePayment, refundPayment, type Card } from "./fiat-stub";
 import { memoFromOrderId } from "./memo";
 import { nonceKeyFor } from "./nonce-key";
 import { HttpError } from "./http-error";
-import { lockOrder, transition } from "./orders-db";
+import { assertCurrentToken, lockOrder, transition } from "./orders-db";
 
 /**
  * Onramp: fake USD in -> AcmeUSD minted to the user's wallet.
@@ -63,6 +63,7 @@ export async function createOnramp(
     .values({
       id,
       userAddress: p.userAddress,
+      token: deps.chain.token,
       amount: p.amount,
       memo: memoFromOrderId(id),
       idempotencyKey: p.idempotencyKey,
@@ -96,9 +97,9 @@ async function enforceLimits(userAddress: string, amount: bigint, now: Date) {
   if (BigInt(day.total) + amount > DAILY_ONRAMP_CAP) throw new HttpError(429, "Daily purchase limit reached ($50,000)");
 }
 
-export async function listOnramps(userAddress: string) {
+export async function listOnramps(userAddress: string, token: string = defaultChain().token) {
   return db.query.onrampOrders.findMany({
-    where: eq(onrampOrders.userAddress, userAddress),
+    where: and(eq(onrampOrders.userAddress, userAddress), eq(onrampOrders.token, token)),
     orderBy: desc(onrampOrders.createdAt),
     limit: 50,
   });
@@ -119,6 +120,7 @@ export async function processOnramp(id: string, deps: Deps = defaultDeps()): Pro
   // mintStartedAt and backs off, so two callers can never both reach the send.
   const decision = await db.transaction(async (tx) => {
     let order = await lockOrder(tx, onrampOrders, id);
+    assertCurrentToken(order, deps.chain.token);
     if (order.status === "created") {
       const { ref } = await deps.fiat.capturePayment({ orderId: id, amount: order.amount, last4: order.paymentDetails?.last4 });
       order = (await transition(tx, onrampOrders, id, ["created"], { status: "payment_captured", paymentRef: ref })) ?? order;

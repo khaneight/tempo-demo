@@ -31,10 +31,11 @@ export type Liabilities = {
   needsReview: { onramp: (typeof onrampOrders.$inferSelect)[]; offramp: (typeof offrampOrders.$inferSelect)[] };
 };
 
-async function sumByStatus(table: typeof onrampOrders | typeof offrampOrders) {
+async function sumByStatus(table: typeof onrampOrders | typeof offrampOrders, token: string) {
   const rows = await db
     .select({ status: table.status, total: sql<string>`coalesce(sum(${table.amount}), 0)`, n: sql<number>`count(*)::int` })
     .from(table)
+    .where(eq(table.token, token))
     .groupBy(table.status);
   const totals: Record<string, bigint> = {};
   const counts: Record<string, number> = {};
@@ -47,9 +48,10 @@ async function sumByStatus(table: typeof onrampOrders | typeof offrampOrders) {
 }
 
 export async function computeLiabilities(ch: Chain = defaultChain()): Promise<Liabilities> {
+  const token = ch.token;
   const [on, off, userRows, totalSupply, treasuryBalance, feeAmmBalance] = await Promise.all([
-    sumByStatus(onrampOrders),
-    sumByStatus(offrampOrders),
+    sumByStatus(onrampOrders, token),
+    sumByStatus(offrampOrders, token),
     db.select().from(users).orderBy(desc(users.createdAt)).limit(1000),
     ch.totalSupply(),
     ch.balanceOf(ch.treasury),
@@ -63,7 +65,7 @@ export async function computeLiabilities(ch: Chain = defaultChain()): Promise<Li
   const [reviewCredited] = await db
     .select({ total: sql<string>`coalesce(sum(${offrampOrders.amount}), 0)` })
     .from(offrampOrders)
-    .where(and(eq(offrampOrders.status, "needs_review"), isNotNull(offrampOrders.creditedAt)));
+    .where(and(eq(offrampOrders.status, "needs_review"), isNotNull(offrampOrders.creditedAt), eq(offrampOrders.token, token)));
   const reviewPaid = BigInt(reviewCredited.total);
 
   const minted = on.sum("minted");
@@ -74,8 +76,8 @@ export async function computeLiabilities(ch: Chain = defaultChain()): Promise<Li
   const sumUsers = userList.reduce((a, u) => a + u.balance, 0n);
 
   const [onReview, offReview] = await Promise.all([
-    listByStatus(onrampOrders, ["needs_review"]),
-    listByStatus(offrampOrders, ["needs_review"]),
+    listByStatus(onrampOrders, ["needs_review"], token),
+    listByStatus(offrampOrders, ["needs_review"], token),
   ]);
 
   return {
@@ -134,10 +136,11 @@ export async function reprocessStuck(olderThanMs = 60_000, deps: { onramp?: Onra
   const cutoff = Date.now() - olderThanMs;
   // Housekeeping: expired passkey challenges/sessions are otherwise only lazily ignored.
   await db.execute(sql`delete from kv where expires_at is not null and expires_at <= now()`);
-  const onramps = (await listByStatus(onrampOrders, ["created", "payment_captured", "minting"])).filter(
+  const token = (deps.onramp?.chain ?? deps.offramp?.chain ?? defaultChain()).token;
+  const onramps = (await listByStatus(onrampOrders, ["created", "payment_captured", "minting"], token)).filter(
     (o) => o.updatedAt.getTime() < cutoff,
   );
-  const offramps = (await listByStatus(offrampOrders, ["created", "transfer_verified", "credited", "burning"])).filter(
+  const offramps = (await listByStatus(offrampOrders, ["created", "transfer_verified", "credited", "burning"], token)).filter(
     (o) => o.updatedAt.getTime() < cutoff,
   );
   const results: { kind: "onramp" | "offramp"; id: string; before: string; after: string }[] = [];

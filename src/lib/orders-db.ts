@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { offrampOrders, onrampOrders } from "@/db/schema";
@@ -65,11 +65,21 @@ export async function getOrder<T extends Table>(table: T, id: string): Promise<R
   return rows[0] ?? null;
 }
 
-export async function listByStatus<T extends Table>(table: T, statuses: readonly Row<T>["status"][]): Promise<Row<T>[]> {
+export async function listByStatus<T extends Table>(table: T, statuses: readonly Row<T>["status"][], token: string): Promise<Row<T>[]> {
   return (await db
     .select()
     .from(table as PgTable)
-    .where(inArray(table.status, statuses as never))) as Row<T>[];
+    .where(and(inArray(table.status, statuses as never), eq(table.token, token)))) as Row<T>[];
+}
+
+export class WrongTokenError extends Error {
+  constructor(orderToken: string, current: string) {
+    super(`Order belongs to token ${orderToken || "(unknown)"}, not the active token ${current}`);
+  }
+}
+/** Refuse to touch an order issued against another token (or one from before token scoping). */
+export function assertCurrentToken(order: { token: string }, current: string) {
+  if (order.token.toLowerCase() !== current.toLowerCase()) throw new WrongTokenError(order.token, current);
 }
 
 export function isUniqueViolation(err: unknown): boolean {

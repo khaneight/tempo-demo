@@ -11,6 +11,7 @@ const h = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
 const ev = (p: { tx: number; from: string; to: string; amount: bigint; t: number; logIndex?: number }) => ({
   txHash: h(p.tx),
   logIndex: p.logIndex ?? 0,
+  token: TOKEN,
   blockNumber: BigInt(p.t),
   blockTime: new Date(p.t * 1000),
   from: p.from,

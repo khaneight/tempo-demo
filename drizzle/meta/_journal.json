@@ -15,6 +15,13 @@
       "when": 1789591459030,
       "tag": "0001_activity_index",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789594270657,
+      "tag": "0002_token_scope",
+      "breakpoints": true
     }
   ]
 }

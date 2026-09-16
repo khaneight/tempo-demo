@@ -25,8 +25,10 @@ export const users = pgTable("users", {
   address: text("address").primaryKey(),
   credentialId: text("credential_id").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  /** Last block whose AcmeUSD transfers for this wallet have been copied into transfer_events. */
+  /** Last block whose AcmeUSD transfers for this wallet have been copied into transfer_events (for `sync_token`). */
   syncedBlock: bigint("synced_block", { mode: "bigint" }),
+  /** Token address the sync cursor refers to; a different active token restarts from its deploy block. */
+  syncToken: text("sync_token"),
 });
 
 /**
@@ -39,6 +41,8 @@ export const transferEvents = pgTable(
   {
     txHash: text("tx_hash").notNull(),
     logIndex: integer("log_index").notNull(),
+    /** Token contract the log came from; the ledger is scoped per token. */
+    token: text("token").notNull().default(""),
     blockNumber: bigint("block_number", { mode: "bigint" }).notNull(),
     blockTime: timestamp("block_time", { withTimezone: true }).notNull(),
     from: text("from_address").notNull(),
@@ -67,6 +71,12 @@ export const onrampOrders = pgTable(
     userAddress: text("user_address")
       .notNull()
       .references(() => users.address),
+    /**
+     * Token this order issues. The ledger is scoped per token so an environment
+     * pointed at a new AcmeUSD sees only its own issuance (and never re-drives an
+     * order that belongs to another token).
+     */
+    token: text("token").notNull().default(""),
     amount: bigint("amount", { mode: "bigint" }).notNull(),
     /** bytes32 hex derived from id; unique by construction. */
     memo: text("memo").notNull().unique(),
@@ -109,6 +119,8 @@ export const offrampOrders = pgTable(
     userAddress: text("user_address")
       .notNull()
       .references(() => users.address),
+    /** Token this order redeems (see onramp_orders.token). */
+    token: text("token").notNull().default(""),
     amount: bigint("amount", { mode: "bigint" }).notNull(),
     memo: text("memo").notNull().unique(),
     status: offrampStatus("status").notNull().default("created"),

@@ -5,7 +5,7 @@ import { offrampOrders, onrampOrders } from "@/db/schema";
 import { computeLiabilities, reprocessStuck } from "@/lib/admin";
 import { FEE_MANAGER, type Chain } from "@/lib/chain";
 import { memoFromOrderId } from "@/lib/memo";
-import { makeUser, mockChain, resetDb, TREASURY } from "@/test/mock-chain";
+import { makeUser, mockChain, resetDb, TOKEN, TREASURY } from "@/test/mock-chain";
 import { randomUUID } from "node:crypto";
 
 /** Chain whose balances/supply we dictate, on top of the mock's nonce+memo behaviour. */
@@ -20,12 +20,12 @@ function chainWith(balances: Record<string, bigint>, totalSupply: bigint): Chain
 
 async function onramp(user: Address, amount: bigint, status: typeof onrampOrders.$inferInsert.status, extra: Partial<typeof onrampOrders.$inferInsert> = {}) {
   const id = randomUUID();
-  await db.insert(onrampOrders).values({ id, userAddress: user, amount, memo: memoFromOrderId(id), idempotencyKey: id, status, createdBlock: 1n, ...extra });
+  await db.insert(onrampOrders).values({ id, userAddress: user, token: TOKEN, amount, memo: memoFromOrderId(id), idempotencyKey: id, status, createdBlock: 1n, ...extra });
   return id;
 }
 async function offramp(user: Address, amount: bigint, status: typeof offrampOrders.$inferInsert.status, extra: Partial<typeof offrampOrders.$inferInsert> = {}) {
   const id = randomUUID();
-  await db.insert(offrampOrders).values({ id, userAddress: user, amount, memo: memoFromOrderId(id), status, createdBlock: 1n, expiresAt: new Date(Date.now() + 86_400_000), ...extra });
+  await db.insert(offrampOrders).values({ id, userAddress: user, token: TOKEN, amount, memo: memoFromOrderId(id), status, createdBlock: 1n, expiresAt: new Date(Date.now() + 86_400_000), ...extra });
   return id;
 }
 
@@ -111,6 +111,17 @@ describe("admin liabilities", () => {
     expect(r3).toMatchObject({ status: "created", transferTxHash: null, transferAmount: null });
     const minted = await onramp(alice, 1_000_000n, "minted", { mintTxHash: ("0x" + "7".repeat(64)) as Hex });
     expect(await reopenOrder("onramp", minted)).toBeNull();
+  });
+
+  it("ignores orders that belong to another token (each environment sees only its own issuance)", async () => {
+    const alice = await makeUser("aa");
+    await onramp(alice, 25_000_000n, "minted", { mintTxHash: ("0x" + "1".repeat(64)) as Hex });
+    await onramp(alice, 40_000_000n, "minted", { mintTxHash: ("0x" + "2".repeat(64)) as Hex, token: "0x20c0000000000000000000000000000000000aaa" });
+    const chain = chainWith({ [alice]: 25_000_000n, [TREASURY]: 0n, [FEE_MANAGER]: 0n }, 25_000_000n);
+    const L = await computeLiabilities(chain);
+    expect(L.fiat.expectedSupply).toBe(25_000_000n);
+    expect(L.reconciliation.supplyDrift).toBe(0n);
+    expect(L.counts.onramp).toEqual({ minted: 1 });
   });
 
   it("flags supply drift when the chain has issuance the ledger never saw, and outsider holdings", async () => {

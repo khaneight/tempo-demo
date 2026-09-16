@@ -1,7 +1,7 @@
 import { ZodError, type ZodType } from "zod";
 import { AmountError } from "./amounts";
 import { HttpError } from "./http-error";
-import { NotFoundError, OrderLockedError } from "./orders-db";
+import { NotFoundError, OrderLockedError, WrongTokenError } from "./orders-db";
 import { json } from "./serialize";
 
 type Ctx<P> = { params: Promise<P> };
@@ -16,6 +16,7 @@ export function handle<P = Record<string, never>>(fn: Handler<P>): Handler<P> {
       if (err instanceof HttpError) return json({ error: err.message }, { status: err.status });
       if (err instanceof OrderLockedError) return json({ error: err.message, inProgress: true }, { status: 409 });
       if (err instanceof NotFoundError) return json({ error: err.message }, { status: 404 });
+      if (err instanceof WrongTokenError) return json({ error: err.message }, { status: 409 });
       if (err instanceof AmountError) return json({ error: err.message }, { status: 400 });
       if (err instanceof ZodError) {
         const first = err.issues[0];

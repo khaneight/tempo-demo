@@ -254,6 +254,18 @@ describe("onramp", () => {
     await expect(createOnramp({ userAddress: other, amount: 2_000_000n, idempotencyKey: "over", card }, deps)).rejects.toMatchObject({ status: 429 });
   });
 
+  it("refuses to process an order issued against another token", async () => {
+    const { deps, mock } = makeDeps();
+    const user = await makeUser();
+    const order = await createOnramp({ userAddress: user, amount: 5_000_000n, idempotencyKey: "k", card }, deps);
+    const { db } = await import("@/db");
+    const { onrampOrders } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    await db.update(onrampOrders).set({ token: "0x20c0000000000000000000000000000000000aaa" }).where(eq(onrampOrders.id, order.id));
+    await expect(processOnramp(order.id, deps)).rejects.toThrow(/belongs to token/);
+    expect(mock.calls.mint).toBe(0);
+  });
+
   it("serializes concurrent processors with a row lock", async () => {
     const { deps, mock } = makeDeps();
     const user = await makeUser();

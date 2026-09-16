@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { type Address, getAbiItem, type Hex } from "viem";
 import { Abis } from "viem/tempo";
 import { db } from "@/db";
@@ -79,9 +79,11 @@ export function viemLogSource(client: {
 
 /** Copy this wallet's new Transfer logs into transfer_events; returns the block synced to. */
 export async function syncTransfers(wallet: Address, src: LogSource, token: Address, deployBlock: bigint): Promise<bigint> {
-  const [u] = await db.select({ syncedBlock: users.syncedBlock }).from(users).where(eq(users.address, wallet));
+  const [u] = await db.select({ syncedBlock: users.syncedBlock, syncToken: users.syncToken }).from(users).where(eq(users.address, wallet));
   const latest = await src.getBlockNumber();
-  let from = (u?.syncedBlock ?? deployBlock - 1n) + 1n;
+  // A cursor from another token is meaningless here: start over from this token's deploy block.
+  const cursor = u?.syncToken?.toLowerCase() === token.toLowerCase() ? u?.syncedBlock : null;
+  let from = (cursor ?? deployBlock - 1n) + 1n;
   if (from > latest) return latest;
   const blockTimes = new Map<bigint, Date>();
   while (from <= latest) {
@@ -93,10 +95,10 @@ export async function syncTransfers(wallet: Address, src: LogSource, token: Addr
     if (logs.length) {
       await db
         .insert(transferEvents)
-        .values(logs.map((l) => ({ txHash: l.txHash, logIndex: l.logIndex, blockNumber: l.blockNumber, blockTime: blockTimes.get(l.blockNumber)!, from: l.from, to: l.to, amount: l.amount })))
+        .values(logs.map((l) => ({ txHash: l.txHash, logIndex: l.logIndex, token: token.toLowerCase(), blockNumber: l.blockNumber, blockTime: blockTimes.get(l.blockNumber)!, from: l.from, to: l.to, amount: l.amount })))
         .onConflictDoNothing();
     }
-    await db.update(users).set({ syncedBlock: to }).where(eq(users.address, wallet));
+    await db.update(users).set({ syncedBlock: to, syncToken: token.toLowerCase() }).where(eq(users.address, wallet));
     from = to + 1n;
   }
   return latest;
@@ -153,18 +155,15 @@ export async function getActivity(wallet: Address, deps: { chain?: Chain; source
     console.warn("[activity] sync failed:", (err as Error).message.split("\n")[0]);
   }
   const [onramps, offramps, events] = await Promise.all([
-    listOnramps(wallet),
-    listOfframps(wallet),
+    listOnramps(wallet, ch.token),
+    listOfframps(wallet, ch.token),
     db
       .select()
       .from(transferEvents)
-      .where(or(eq(transferEvents.from, wallet), eq(transferEvents.to, wallet)))
+      .where(and(eq(transferEvents.token, ch.token.toLowerCase()), or(eq(transferEvents.from, wallet), eq(transferEvents.to, wallet))))
       .orderBy(desc(transferEvents.blockNumber), desc(transferEvents.logIndex))
       .limit(500),
   ]);
   return { rows: buildActivity({ wallet, treasury: ch.treasury, onramps, offramps, events }), syncedBlock };
 }
 
-// keep drizzle helpers referenced for future filters without unused-import churn
-void and;
-void sql;
