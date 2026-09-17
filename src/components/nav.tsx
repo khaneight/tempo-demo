@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { ConnectButtons, DisconnectButton } from "@/components/connect-button";
 import { Identicon } from "@/components/identicon";
+import { NameWalletPrompt } from "@/components/name-wallet-prompt";
 import { WalletSwitcher } from "@/components/wallet-switcher";
 import { useWallet } from "@/lib/use-wallet";
 
@@ -43,6 +44,7 @@ export function Nav() {
         </div>
       </div>
       {isConnected && <WalletSwitcher open={switcher} onOpenChange={setSwitcher} />}
+      {isConnected && <NameWalletPrompt />}
     </header>
   );
 }

@@ -167,6 +167,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > cool now do a final review of platform and codebase, then update the AGENTS file for future contributors
 
+### P21 · naming wallets
+
+> the create new wallet flow should ask you to name the wallet, same with signing in for first time
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

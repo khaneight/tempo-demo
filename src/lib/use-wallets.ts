@@ -3,7 +3,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useConnect, useConnectors } from "wagmi";
+import { getAccount } from "wagmi/actions";
 import { api } from "./api-client";
+import { wagmiConfig } from "./wagmi";
 import { useWallet } from "./use-wallet";
 
 /**
@@ -20,7 +22,8 @@ import { useWallet } from "./use-wallet";
  * We also keep a small registry in localStorage ({ address, credentialId, label })
  * so the list and labels survive "Sign out" (which wipes the SDK store).
  */
-export type KnownWallet = { address: `0x${string}`; credentialId: string; label: string };
+/** `named` = a person chose the label on this device (create flow or rename); unset = only the SDK's registration label. */
+export type KnownWallet = { address: `0x${string}`; credentialId: string; label: string; named?: boolean };
 
 const KEY = "acmeusd.wallets";
 const listeners = new Set<() => void>();
@@ -49,8 +52,14 @@ export function rememberWallet(w: KnownWallet) {
   if (existing && existing.credentialId === w.credentialId && (existing.label || !w.label)) return; // nothing new
   write(existing ? cur.map((x) => (x.address === address ? { ...x, credentialId: w.credentialId, label: x.label || w.label } : x)) : [...cur, { ...w, address }]);
 }
+/** A person-chosen label; also silences the first-time naming prompt for that wallet. */
 export function renameWallet(address: string, label: string) {
-  write(read().map((x) => (x.address === address.toLowerCase() ? { ...x, label: label.trim() } : x)));
+  const a = address.toLowerCase();
+  const cur = read();
+  const next = cur.some((x) => x.address === a)
+    ? cur.map((x) => (x.address === a ? { ...x, label: label.trim(), named: true } : x))
+    : [...cur, { address: a as `0x${string}`, credentialId: "", label: label.trim(), named: true }];
+  write(next);
 }
 const EMPTY: KnownWallet[] = [];
 
@@ -136,7 +145,14 @@ export function useWallets() {
     [active, connectWith, qc, store],
   );
 
-  const create = useCallback((label: string) => connectWith({ method: "register", name: label }), [connectWith]);
+  const create = useCallback(
+    async (label: string) => {
+      await connectWith({ method: "register", name: label });
+      const created = getAccount(wagmiConfig()).address;
+      if (created) renameWallet(created, label);
+    },
+    [connectWith],
+  );
 
   return { wallets, active, switchTo, create, busy: isPending };
 }
