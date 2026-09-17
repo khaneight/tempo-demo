@@ -10,7 +10,7 @@ import { addressFromPublicKey, adminCookieValue, checkAdminPassword, verifyAdmin
 import { HttpError } from "@/lib/http-error";
 import { pgKv } from "@/lib/kv-postgres";
 import { NotFoundError, OrderLockedError } from "@/lib/orders-db";
-import { resetDb } from "@/test/mock-chain";
+import { makeUser, resetDb } from "@/test/mock-chain";
 
 describe("passkey address derivation", () => {
   it("matches viem's Tempo WebAuthn account address for the same public key", () => {
@@ -40,26 +40,42 @@ describe("admin cookie", () => {
   });
 });
 
-describe("linked wallets cookie", () => {
-  it("round-trips, is bound to the session, rejects tampering, expires per entry, and caps the list", async () => {
-    const { decodeLinked, encodeLinked } = await import("@/lib/auth");
-    const now = Date.now();
-    const t = Math.floor(now / 1000);
-    const w = [{ a: "0x59ef6877c5b6dd640ce9e1f94931e9eab40333ff" as const, c: "cred-1", t }];
-    const v = encodeLinked(w, "sess-A", now);
-    expect(decodeLinked(v, "sess-A", now)).toEqual(w);
-    expect(decodeLinked(v, "sess-B", now)).toEqual([]); // another session's cookie is worthless
-    expect(decodeLinked(v, null, now)).toEqual(w); // link route may carry entries over
-    const [payload, sig] = v.split(".");
-    expect(decodeLinked(`${payload}x.${sig}`, "sess-A", now)).toEqual([]);
-    expect(decodeLinked(`${payload}.${sig.slice(1)}a`, "sess-A", now)).toEqual([]);
-    expect(decodeLinked(v, "sess-A", now + 25 * 60 * 60 * 1000)).toEqual([]); // entry expired
-    expect(decodeLinked(undefined, "sess-A", now)).toEqual([]);
-    // Per-entry expiry: an old link is dropped while a fresh one survives re-encoding.
-    const mixed = [{ a: w[0].a, c: "old", t: t - 25 * 60 * 60 }, { a: "0x1111111111111111111111111111111111111111" as const, c: "new", t }];
-    expect(decodeLinked(encodeLinked(mixed, "s", now), "s", now).map((x) => x.c)).toEqual(["new"]);
-    const many = Array.from({ length: 30 }, (_, i) => ({ a: `0x${i.toString(16).padStart(40, "0")}` as `0x${string}`, c: `c${i}`, t }));
-    expect(decodeLinked(encodeLinked(many, "s", now), "s", now)).toHaveLength(20);
+describe("identities", () => {
+  beforeEach(resetDb);
+
+  it("validates usernames and enforces uniqueness at registration", async () => {
+    const { canActFor, createIdentityWithWallet, normalizeUsername, usernameAvailable, UsernameError } = await import("@/lib/identity");
+    expect(normalizeUsername("  Ada_Lovelace ")).toBe("ada_lovelace");
+    for (const bad of ["ab", "-ada", "ada lovelace", "a".repeat(25), "ada!"]) expect(() => normalizeUsername(bad), bad).toThrow(UsernameError);
+    expect(await usernameAvailable("ada")).toEqual({ ok: true });
+    const id = await createIdentityWithWallet({ username: "Ada", address: "0x1111111111111111111111111111111111111111", credentialId: "c1" });
+    expect(id.username).toBe("ada");
+    expect((await usernameAvailable("ADA")).ok).toBe(false);
+    await expect(createIdentityWithWallet({ username: "ada", address: "0x2222222222222222222222222222222222222222", credentialId: "c2" })).rejects.toBeInstanceOf(UsernameError);
+    // a session may act for sibling wallets only
+    const wallets = [{ address: "0x1111111111111111111111111111111111111111" }, { address: "0x3333333333333333333333333333333333333333" }];
+    expect(canActFor(wallets[0].address, wallets[1].address, wallets)).toBe(true);
+    expect(canActFor(wallets[0].address, "0x9999999999999999999999999999999999999999", wallets)).toBe(false);
+    expect(canActFor("0x9999999999999999999999999999999999999999", wallets[1].address, wallets)).toBe(false);
+  });
+
+  it("adds wallets under an identity with labels, renames only its own, and gives legacy wallets an identity", async () => {
+    const { addWalletToIdentity, createIdentityWithWallet, ensureIdentity, identityOfWallet, renameWalletLabel, walletsOf } = await import("@/lib/identity");
+    const a = "0x1111111111111111111111111111111111111111" as const;
+    const b = "0x2222222222222222222222222222222222222222" as const;
+    const id = await createIdentityWithWallet({ username: "ada", address: a, credentialId: "c1" });
+    await addWalletToIdentity({ identityId: id.id, address: b, credentialId: "c2", label: "" });
+    expect((await walletsOf(id.id)).map((w) => [w.address, w.label])).toEqual([[a, "Main"], [b, "Wallet 2"]]);
+    expect((await renameWalletLabel(id.id, b, "  Savings  "))?.label).toBe("Savings");
+    const other = await createIdentityWithWallet({ username: "bob", address: "0x3333333333333333333333333333333333333333", credentialId: "c3" });
+    expect(await renameWalletLabel(other.id, b, "hijack")).toBeNull();
+    expect((await identityOfWallet(b))?.username).toBe("ada");
+    // legacy wallet (row without identity) is adopted on sign-in with a derived username
+    const legacy = await makeUser("cc");
+    const created = await ensureIdentity(legacy, `cred-${legacy}`);
+    expect(created.username).toMatch(/^user-[0-9a-f]{6}$/);
+    expect((await identityOfWallet(legacy))?.wallet.label).toBe("Main");
+    expect((await ensureIdentity(legacy, "x")).id).toBe(created.id); // idempotent
   });
 });
 

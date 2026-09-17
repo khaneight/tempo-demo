@@ -3,7 +3,7 @@
 Prereqs: `.env` filled (see README), `docker compose up -d db`, `pnpm db:migrate`, `pnpm dev`. Admin at `/admin` (password from `.env`).
 
 ## Happy path
-1. `/` → **Create a new wallet** → complete the passkey prompt → lands on `/wallet` with balance 0.
+1. `/` → **Register** → pick a username (live availability check) → **Set up passkey** → lands on `/wallet` showing `@username · 1 wallet`, wallet "Main", balance 0. (**Sign in with passkey** works with any of the identity's passkeys afterwards.)
 2. `/wallet` → **Deposit** → amount 25, test card (default Luhn-valid) → order page shows `USD received → Minting → Delivered`, mint tx link opens on the explorer.
 3. `/wallet` shows 25.00. `/admin` → **Supply drift = 0**, reserves held $25, user liabilities 25.
 4. `/wallet` → **Send** → 5 to a second wallet (create one in another browser profile) → recipient's Activity shows *Received 5.00*; the explorer shows the fee was paid in AcmeUSD, and the sender's Activity lists it under *Network fee* (toggle "hide network fees").

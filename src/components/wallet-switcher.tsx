@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatAmount } from "@/lib/amounts";
 import { ACME_USD, short } from "@/lib/client-config";
-import { renameWallet, useWallets } from "@/lib/use-wallets";
+import { useWallets } from "@/lib/use-wallets";
 
 /** Switch between this device's passkey wallets (click a row), rename them, or register a new one. */
 export function WalletSwitcher({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { wallets, active, switchTo, create, busy } = useWallets();
+  const { username, wallets, active, switchTo, create, rename, busy } = useWallets();
   const [label, setLabel] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -39,20 +39,20 @@ export function WalletSwitcher({ open, onOpenChange }: { open: boolean; onOpenCh
     }
   }
 
-  function saveName(address: string) {
-    renameWallet(address, draft || "Wallet");
-    setEditing(null);
+  async function saveName(address: string) {
+    const ok = await run(() => rename(address, draft || "Wallet"), false);
+    if (ok) setEditing(null);
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Your wallets</DialogTitle>
-          <DialogDescription>Each wallet is its own passkey on this device. Click one to switch — you only sign in once per wallet.</DialogDescription>
+          <DialogTitle>{username ? `@${username}'s wallets` : "Your wallets"}</DialogTitle>
+          <DialogDescription>Each wallet is its own passkey. Click one to switch — a wallet you haven&apos;t used on this device yet asks for one confirmation.</DialogDescription>
         </DialogHeader>
         <ul className="divide-y rounded-lg border">
-          {wallets.length === 0 && <li className="p-3 text-sm text-muted-foreground">No wallets remembered on this device yet.</li>}
+          {wallets.length === 0 && <li className="p-3 text-sm text-muted-foreground">No wallets yet.</li>}
           {wallets.map((w, i) => {
             const isActive = w.address === active;
             const bal = balances.data?.[i]?.result as bigint | undefined;
@@ -127,7 +127,7 @@ export function WalletSwitcher({ open, onOpenChange }: { open: boolean; onOpenCh
               <Input id="wallet-label" autoFocus placeholder="e.g. Savings" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} />
               <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />} Create</Button>
             </div>
-            <p className="text-xs text-muted-foreground">Creates a new passkey (a new address) and switches to it.</p>
+            <p className="text-xs text-muted-foreground">Creates a new passkey (a new address) under @{username} and switches to it.</p>
           </form>
         ) : (
           <Button variant="outline" onClick={() => setAdding(true)} disabled={busy}><Plus className="h-4 w-4" /> Add a wallet</Button>

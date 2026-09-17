@@ -17,7 +17,7 @@ import { addressUrl, short } from "@/lib/client-config";
 type S = string; // bigint serialized
 export type AdminData = {
   chain: { totalSupply: S; treasuryBalance: S; feeAmmBalance: S };
-  users: { address: string; balance: S; createdAt: string }[];
+  users: { address: string; balance: S; createdAt: string; username: string | null; label: string }[];
   unknownHolders: { address: string; balance: S }[];
   unknownTotal: S;
   holdersSyncedBlock: S;
@@ -82,8 +82,8 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
 
   const holders = useMemo(() => {
     const rows = [
-      ...data.users.map((u) => ({ address: u.address, balance: u.balance, joined: u.createdAt as string | null, known: true })),
-      ...data.unknownHolders.map((u) => ({ address: u.address, balance: u.balance, joined: null, known: false })),
+      ...data.users.map((u) => ({ address: u.address, balance: u.balance, joined: u.createdAt as string | null, known: true, who: u.username ? `@${u.username}${u.label ? ` · ${u.label}` : ""}` : null })),
+      ...data.unknownHolders.map((u) => ({ address: u.address, balance: u.balance, joined: null, known: false, who: null })),
     ];
     return (hideZero ? rows.filter((r) => BigInt(r.balance) !== 0n) : rows).sort((a, b) => Number(BigInt(b.balance) - BigInt(a.balance)));
   }, [data, hideZero]);
@@ -219,7 +219,10 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Identicon address={u.address} size={22} />
-                      <a href={addressUrl(u.address)} target="_blank" rel="noreferrer" className="font-mono text-xs underline decoration-dotted">{u.address}</a>
+                      <div className="min-w-0">
+                        {u.who && <div className="text-xs font-medium">{u.who}</div>}
+                        <a href={addressUrl(u.address)} target="_blank" rel="noreferrer" className="font-mono text-xs underline decoration-dotted">{u.address}</a>
+                      </div>
                       {!u.known && (
                         <span
                           className="inline-flex cursor-help items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"

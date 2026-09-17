@@ -105,7 +105,7 @@ export function mockChain() {
 }
 
 export async function resetDb() {
-  await db.execute(sql`truncate table onramp_orders, offramp_orders, transfer_events, users, kv restart identity cascade`);
+  await db.execute(sql`truncate table onramp_orders, offramp_orders, transfer_events, users, identities, kv restart identity cascade`);
 }
 
 export async function makeUser(seed = "aa"): Promise<Address> {

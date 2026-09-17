@@ -17,7 +17,7 @@ export default function Home() {
         <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">ACME · on Tempo</p>
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">A dollar you can send like a text.</h1>
         <p className="mx-auto max-w-lg text-lg text-muted-foreground">
-          AcmeUSD is ACME&apos;s stablecoin. Buy it with USD, send it anywhere in a second, cash out whenever. Your wallet is just a passkey.
+          AcmeUSD is ACME&apos;s stablecoin. Buy it with USD, send it anywhere in a second, cash out whenever. Pick a username, set up a passkey — that&apos;s your wallet.
         </p>
         <div className="flex justify-center pt-2">
           {isConnected ? (

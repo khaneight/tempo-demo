@@ -171,6 +171,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > the create new wallet flow should ask you to name the wallet, same with signing in for first time
 
+### P22 · identities
+
+> update main registration flow. two options: register and sign in. registration requires picking username and setting up passkey. once registered you can sign in with that passkey and create new wallets, each with their own name. username should show up in main wallet screen above wallet selector, with badge showing # of wallets. on nav bar it shows username rather than current address. can remove wallet selector button from nav bar
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong

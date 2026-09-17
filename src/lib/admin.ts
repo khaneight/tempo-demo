@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { getAbiItem } from "viem";
 import { Abis } from "viem/tempo";
 import { db } from "@/db";
-import { offrampOrders, onrampOrders, users } from "@/db/schema";
+import { identities, offrampOrders, onrampOrders, users } from "@/db/schema";
 import { chain as defaultChain, type Chain, FEE_MANAGER, ZERO } from "./chain";
 import { env } from "./env";
 import { pgKv } from "./kv-postgres";
@@ -21,7 +21,7 @@ export type Liabilities = {
   /** feeAmmBalance: AcmeUSD collected as network fees (users pay fees in AcmeUSD; the Fee AMM holds them; ACME is the LP). */
   chain: { totalSupply: bigint; treasuryBalance: bigint; feeAmmBalance: bigint };
   /** Registered wallets (passkeys created here). */
-  users: { address: string; balance: bigint; createdAt: Date }[];
+  users: { address: string; balance: bigint; createdAt: Date; username: string | null; label: string }[];
   /** Addresses that have ever received AcmeUSD but never registered here (P2P recipients, other apps); top 200 by balance. */
   unknownHolders: { address: string; balance: bigint }[];
   /** Sum over ALL unknown holders (not just the listed ones). */
@@ -89,7 +89,12 @@ export async function computeLiabilities(ch: Chain = defaultChain(), deployBlock
   const [on, off, userRows, totalSupply, treasuryBalance, feeAmmBalance, holderIndex] = await Promise.all([
     sumByStatus(onrampOrders, token),
     sumByStatus(offrampOrders, token),
-    db.select().from(users).orderBy(desc(users.createdAt)).limit(1000),
+    db
+      .select({ address: users.address, createdAt: users.createdAt, label: users.label, username: identities.username })
+      .from(users)
+      .leftJoin(identities, eq(users.identityId, identities.id))
+      .orderBy(desc(users.createdAt))
+      .limit(1000),
     ch.totalSupply(),
     ch.balanceOf(ch.treasury),
     ch.balanceOf(FEE_MANAGER),
@@ -99,7 +104,7 @@ export async function computeLiabilities(ch: Chain = defaultChain(), deployBlock
     }),
   ]);
   const balances = await Promise.all(userRows.map((u) => ch.balanceOf(u.address as `0x${string}`)));
-  const userList = userRows.map((u, i) => ({ address: u.address, balance: balances[i], createdAt: u.createdAt }));
+  const userList = userRows.map((u, i) => ({ address: u.address, balance: balances[i], createdAt: u.createdAt, username: u.username, label: u.label }));
 
   const known = new Set([...userRows.map((u) => u.address.toLowerCase()), ch.treasury.toLowerCase(), FEE_MANAGER, ZERO]);
   const unknownAddrs = holderIndex.holders.filter((a) => !known.has(a));

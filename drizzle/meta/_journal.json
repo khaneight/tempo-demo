@@ -22,6 +22,13 @@
       "when": 1789594270657,
       "tag": "0002_token_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789608018326,
+      "tag": "0003_identities",
+      "breakpoints": true
     }
   ]
 }

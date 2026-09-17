@@ -1,90 +1,34 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useConnect, useConnectors } from "wagmi";
-import { getAccount } from "wagmi/actions";
 import { api } from "./api-client";
-import { wagmiConfig } from "./wagmi";
-import { useWallet } from "./use-wallet";
+import { useWallet, type SessionWallet } from "./use-wallet";
 
 /**
- * A person can own several passkey wallets on one device (each "Create a new
- * wallet" registers a new passkey → new address).
+ * An identity's wallets come from the server (`/api/session`), so the list and
+ * labels follow the username across devices.
  *
- * Switching does NOT prompt the passkey: the SDK store keeps every account that
- * has connected in this browser, so switching is a local reorder of that store
- * (wagmi follows via `accountsChanged`), and the server accepts the wallet via the
- * signed linked-wallets cookie it recorded when that wallet last signed in.
- * Only two things ever prompt: signing in a wallet for the first time (or after
- * "Sign out"), and signing a transaction.
- *
- * We also keep a small registry in localStorage ({ address, credentialId, label })
- * so the list and labels survive "Sign out" (which wipes the SDK store).
+ * Switching does not prompt the passkey when the SDK already holds that account
+ * in this browser (a local reorder of its store; wagmi follows `accountsChanged`).
+ * A wallet never used on this device needs one passkey confirmation
+ * (`wallet_connect` with its credential id) — after that it's remembered.
+ * The server accepts any wallet of the signed-in identity via the `x-wallet` header.
  */
-/** `named` = a person chose the label on this device (create flow or rename); unset = only the SDK's registration label. */
-export type KnownWallet = { address: `0x${string}`; credentialId: string; label: string; named?: boolean };
-
-const KEY = "acmeusd.wallets";
-const listeners = new Set<() => void>();
-let cache: KnownWallet[] | null = null;
-
-function read(): KnownWallet[] {
-  if (cache) return cache;
-  try {
-    cache = JSON.parse(localStorage.getItem(KEY) ?? "[]") as KnownWallet[];
-  } catch {
-    cache = [];
-  }
-  return cache;
-}
-function write(next: KnownWallet[]) {
-  cache = next;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {}
-  listeners.forEach((l) => l());
-}
-export function rememberWallet(w: KnownWallet) {
-  const cur = read();
-  const address = w.address.toLowerCase() as `0x${string}`;
-  const existing = cur.find((x) => x.address === address);
-  if (existing && existing.credentialId === w.credentialId && (existing.label || !w.label)) return; // nothing new
-  write(existing ? cur.map((x) => (x.address === address ? { ...x, credentialId: w.credentialId, label: x.label || w.label } : x)) : [...cur, { ...w, address }]);
-}
-/** A person-chosen label; also silences the first-time naming prompt for that wallet. */
-export function renameWallet(address: string, label: string) {
-  const a = address.toLowerCase();
-  const cur = read();
-  const next = cur.some((x) => x.address === a)
-    ? cur.map((x) => (x.address === a ? { ...x, label: label.trim(), named: true } : x))
-    : [...cur, { address: a as `0x${string}`, credentialId: "", label: label.trim(), named: true }];
-  write(next);
-}
-const EMPTY: KnownWallet[] = [];
-
 type SdkAccount = { address: string; label?: string; credential?: { id: string } };
-type SdkStore = { getState(): { accounts: readonly SdkAccount[]; activeAccount: number }; setState(p: Partial<{ accounts: readonly SdkAccount[]; activeAccount: number }>): void; subscribe(cb: () => void): () => void };
-
-/** Record the current passkey session's wallet server-side so future switches to it need no prompt. */
-export async function linkCurrentSession() {
-  await api("/api/session/link", { method: "POST", json: {} }).catch(() => {});
-}
+type SdkStore = {
+  getState(): { accounts: readonly SdkAccount[]; activeAccount: number };
+  setState(p: Partial<{ accounts: readonly SdkAccount[]; activeAccount: number }>): void;
+};
 
 export function useWallets() {
   const qc = useQueryClient();
   const [connector] = useConnectors();
   const { connectAsync, isPending } = useConnect();
-  const { address: active } = useWallet();
-
-  const wallets = useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-    read,
-    () => EMPTY,
-  );
+  const { address: active, identity } = useWallet();
+  const wallets: SessionWallet[] = identity?.wallets ?? [];
+  const username = identity?.username ?? null;
 
   const [store, setStore] = useState<SdkStore | null>(null);
   useEffect(() => {
@@ -97,44 +41,29 @@ export function useWallets() {
       alive = false;
     };
   }, [connector]);
-  // Mirror the SDK's accounts (and their labels) into the registry.
-  useEffect(() => {
-    if (!store) return;
-    let last: readonly SdkAccount[] | null = null;
-    const sync = () => {
-      const accounts = store.getState().accounts;
-      if (accounts === last) return; // the store fires on every change (chainId, auth…); only accounts matter here
-      last = accounts;
-      for (const a of accounts) {
-        if (a.credential?.id) rememberWallet({ address: a.address as `0x${string}`, credentialId: a.credential.id, label: a.label ?? "" });
-      }
-    };
-    sync();
-    return store.subscribe(sync);
-  }, [store]);
 
-  /** Passkey ceremony path (first sign-in of a wallet, or after sign-out). */
+  /** Passkey ceremony path. */
   const connectWith = useCallback(
     async (capabilities: Record<string, unknown>) => {
       if (active) {
+        // wagmi's connect() refuses while connected and the connector skips wallet_connect when it
+        // already has accounts — so talk to the provider; it emits accountsChanged and wagmi follows.
         const provider = (await connector.getProvider()) as { request(a: { method: string; params?: unknown[] }): Promise<unknown> };
         await provider.request({ method: "wallet_connect", params: [{ capabilities }] });
       } else {
         await connectAsync({ connector, capabilities } as Parameters<typeof connectAsync>[0]);
       }
-      await linkCurrentSession();
       await qc.invalidateQueries();
     },
     [active, connectAsync, connector, qc],
   );
 
   const switchTo = useCallback(
-    async (w: KnownWallet) => {
+    async (w: SessionWallet) => {
       if (w.address === active) return;
       const accounts = store?.getState().accounts ?? [];
       const idx = accounts.findIndex((a) => a.address.toLowerCase() === w.address);
       if (store && idx >= 0) {
-        // Local switch, no prompt: put the chosen account first; the SDK emits accountsChanged.
         const next = [accounts[idx], ...accounts.filter((_, i) => i !== idx)];
         store.setState({ accounts: next, activeAccount: 0 });
         await qc.invalidateQueries();
@@ -145,14 +74,16 @@ export function useWallets() {
     [active, connectWith, qc, store],
   );
 
-  const create = useCallback(
-    async (label: string) => {
-      await connectWith({ method: "register", name: label });
-      const created = getAccount(wagmiConfig()).address;
-      if (created) renameWallet(created, label);
+  /** New passkey under this identity; the server attaches it because the request carries our session. */
+  const create = useCallback((label: string) => connectWith({ method: "register", name: label.trim() || "Wallet" }), [connectWith]);
+
+  const rename = useCallback(
+    async (address: string, label: string) => {
+      await api(`/api/wallets/${address}`, { method: "PATCH", json: { label } });
+      await qc.invalidateQueries({ queryKey: ["session"] });
     },
-    [connectWith],
+    [qc],
   );
 
-  return { wallets, active, switchTo, create, busy: isPending };
+  return { username, wallets, active, switchTo, create, rename, busy: isPending };
 }

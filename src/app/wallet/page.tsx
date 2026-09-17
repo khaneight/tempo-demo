@@ -22,7 +22,7 @@ type Flow = "deposit" | "withdraw" | "send" | "wallets" | null;
 
 function Inner() {
   const { address } = useWallet();
-  const { wallets } = useWallets();
+  const { username, wallets } = useWallets();
   const current = wallets.find((w) => w.address === address);
   const balance = useAcmeBalance(address);
   const activity = useQuery({ queryKey: ["activity", address], queryFn: () => api<{ rows: ActivityDto[] }>("/api/activity"), refetchInterval: 10_000 });
@@ -33,6 +33,11 @@ function Inner() {
     <div className="space-y-4">
       <Card>
         <CardContent className="space-y-4 pt-6">
+          {/* Row 0: identity */}
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold">@{username ?? "…"}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">{wallets.length} {wallets.length === 1 ? "wallet" : "wallets"}</span>
+          </div>
           {/* Row 1: wallet selector (left) · balance (right) */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
@@ -46,8 +51,7 @@ function Inner() {
                 <Identicon address={address ?? ""} size={44} />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    <span className="truncate">{current?.label || "Passkey wallet"}</span>
-                    {wallets.length > 1 && <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{wallets.length} wallets</span>}
+                    <span className="truncate">{current?.label || "Wallet"}</span>
                   </div>
                   <div className="truncate font-mono text-xs text-muted-foreground">{address}</div>
                 </div>

@@ -20,10 +20,27 @@ import {
  * of truth for fiat movements and for what we *intended* to do on-chain.
  */
 
+/**
+ * An identity is a person: a username plus one or more wallets (each its own
+ * passkey). Registration creates the identity with its first wallet; a signed-in
+ * identity can add wallets. Any of its passkeys signs it in.
+ */
+export const identities = pgTable("identities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Lowercase, unique, 3–24 chars of [a-z0-9_-]. */
+  username: text("username").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type Identity = typeof identities.$inferSelect;
+
 export const users = pgTable("users", {
-  /** Lowercase 0x address derived from the passkey public key. */
+  /** Lowercase 0x address derived from the passkey public key. One row per wallet (= passkey). */
   address: text("address").primaryKey(),
   credentialId: text("credential_id").notNull().unique(),
+  /** Owning identity. Null only for wallets registered before identities existed; backfilled on next sign-in. */
+  identityId: uuid("identity_id").references(() => identities.id),
+  /** Person-chosen wallet name (server-side so it follows the identity across devices). */
+  label: text("label").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   /** Last block whose AcmeUSD transfers for this wallet have been copied into transfer_events (for `sync_token`). */
   syncedBlock: bigint("synced_block", { mode: "bigint" }),
