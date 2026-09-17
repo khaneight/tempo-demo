@@ -4,7 +4,7 @@ import { Address, PublicKey } from "ox";
 import { cookies } from "next/headers";
 import { env } from "./env";
 import { HttpError } from "./http-error";
-import { addWalletToIdentity, canActFor, createIdentityWithWallet, ensureIdentity, identityOfWallet, walletsOf } from "./identity";
+import { addWalletToIdentity, canActFor, createIdentityWithWallet, ensureIdentity, identityOfWallet, pendingLabelKey, walletsOf } from "./identity";
 import { pgKv } from "./kv-postgres";
 
 /**
@@ -21,9 +21,11 @@ let handler: ReturnType<typeof Handler.webAuthn> | undefined;
  * Postgres (via pgKv), so a user can sign in from any device and always
  * derive the same wallet address. Mounted at /api/auth/*.
  *
- * Registration semantics (the `name` given to /register/options):
- *  - no session on the request  → a NEW identity: `name` is the username, wallet "Main"
- *  - a session on the request   → a NEW WALLET for that identity: `name` is the wallet label
+ * Registration semantics (the `name` given to /register/options is ALWAYS the username —
+ * it is what the OS shows as the passkey's label):
+ *  - no session on the request  → a NEW identity with that username, wallet "Main"
+ *  - a session on the request   → a NEW WALLET for that identity; its label was parked via
+ *                                  POST /api/wallets/pending-label just before the ceremony
  * Throwing from onRegister makes the SDK reject the ceremony and drop the credential,
  * which is how a taken/invalid username is refused.
  */
@@ -40,8 +42,10 @@ export function webAuthnHandler() {
         const address = addressFromPublicKey(publicKey);
         const session = await handler!.getSession(request);
         const owner = session ? await identityOfWallet(addressFromPublicKey(session.publicKey)) : null;
-        if (owner) {
-          await addWalletToIdentity({ identityId: owner.id, address, credentialId, label: name ?? "" });
+        if (owner && session) {
+          // The ceremony's `name` is the username (the passkey's OS label); the wallet label was parked by the client.
+          const parked = (await pgKv.take?.<string>(pendingLabelKey(session.credentialId))) ?? "";
+          await addWalletToIdentity({ identityId: owner.id, address, credentialId, label: parked });
         } else {
           await createIdentityWithWallet({ username: name ?? "", address, credentialId });
         }

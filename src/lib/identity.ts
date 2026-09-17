@@ -16,6 +16,9 @@ import { isUniqueViolation } from "./orders-db";
 
 export const USERNAME_RE = /^[a-z0-9][a-z0-9_-]{2,23}$/;
 
+/** kv key holding the label a signed-in session chose for the wallet it is about to register. */
+export const pendingLabelKey = (sessionCredentialId: string) => `pending-label:${sessionCredentialId}`;
+
 export class UsernameError extends Error {}
 
 export function normalizeUsername(raw: string): string {

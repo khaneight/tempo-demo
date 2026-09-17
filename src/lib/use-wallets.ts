@@ -74,8 +74,17 @@ export function useWallets() {
     [active, connectWith, qc, store],
   );
 
-  /** New passkey under this identity; the server attaches it because the request carries our session. */
-  const create = useCallback((label: string) => connectWith({ method: "register", name: label.trim() || "Wallet" }), [connectWith]);
+  /**
+   * New passkey under this identity. The passkey's own label stays the username (that's what
+   * the OS shows); the wallet label is parked server-side first and applied by onRegister.
+   */
+  const create = useCallback(
+    async (label: string) => {
+      await api("/api/wallets/pending-label", { method: "POST", json: { label: label.trim() || "Wallet" } });
+      await connectWith({ method: "register", name: username ?? "wallet" });
+    },
+    [connectWith, username],
+  );
 
   const rename = useCallback(
     async (address: string, label: string) => {
