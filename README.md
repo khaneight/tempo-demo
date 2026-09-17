@@ -5,6 +5,7 @@ ACME's stablecoin, live on Tempo testnet (Moderato). Users create a **passkey wa
 - Design doc: [`DESIGN.md`](./DESIGN.md) · Research notes: [`RESEARCH.md`](./RESEARCH.md) · AI threads: [`AI_THREADS.md`](./AI_THREADS.md)
 - Token: [`0x20c0…5ac7553a9946a27a`](https://explore.testnet.tempo.xyz/address/0x20c0000000000000000000005ac7553a9946a27a) (TIP-20 "Acme USD" / `AcmeUSD`, 6 decimals) · Treasury/issuer: `0x5909…8a46`
 - Manual test + chaos script: [`scripts/e2e.md`](./scripts/e2e.md)
+- Admin password: tempo123
 
 ## Stack
 Next.js 16 (App Router, route handlers) · wagmi 3 + viem 2 (`viem/tempo`, `wagmi/tempo`) · `accounts/server` for passkey ceremonies · Postgres + Drizzle · Tailwind + shadcn/ui · vitest · Docker · Vercel.
@@ -71,5 +72,3 @@ One-time setup checklist:
 5. Smoke test on the production URL: create a passkey wallet → buy → cash out → `/admin` reconciliation balanced. Passkeys created on a preview URL belong to that hostname only.
 6. Optional: Settings → Cron Jobs shows `/api/admin/reprocess`; hit it once manually with `Authorization: Bearer $CRON_SECRET` to confirm 200.
 
-## Admin
-`/admin` — password is `ADMIN_PASSWORD` from the environment (reviewers: see the submission email / Vercel env).
