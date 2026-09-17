@@ -2,12 +2,13 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Fingerprint, Loader2, UserPlus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useConnect, useConnectors, useDisconnect } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import { useWallet } from "@/lib/use-wallet";
+import { readyProvider } from "@/lib/use-wallets";
 
 /**
  * Register = pick a username, then set up a passkey (the identity's first wallet, "Main").
@@ -42,11 +43,16 @@ export function ConnectButtons({
     staleTime: 10_000,
   });
 
+  // Create the provider early so its IndexedDB store has rehydrated by the time the person clicks.
+  useEffect(() => {
+    if (connector) readyProvider(connector).catch(() => {});
+  }, [connector]);
+
   async function ceremony(capabilities?: Record<string, unknown>) {
+    const provider = await readyProvider(connector);
     if (isConnected) {
       // Re-auth while connected (server session expired): talk to the provider directly so the
       // SDK's other remembered accounts are kept — a wagmi disconnect would wipe them all.
-      const provider = (await connector.getProvider()) as { request(a: { method: string; params?: unknown[] }): Promise<unknown> };
       await provider.request({ method: "wallet_connect", params: [capabilities ? { capabilities } : {}] });
     } else {
       await connectAsync({ connector, ...(capabilities ? { capabilities } : {}) } as Parameters<typeof connectAsync>[0]);

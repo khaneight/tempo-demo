@@ -20,7 +20,30 @@ type SdkAccount = { address: string; label?: string; credential?: { id: string }
 type SdkStore = {
   getState(): { accounts: readonly SdkAccount[]; activeAccount: number };
   setState(p: Partial<{ accounts: readonly SdkAccount[]; activeAccount: number }>): void;
+  persist?: { hasHydrated(): boolean; onFinishHydration(cb: () => void): () => void };
 };
+type SdkProvider = { request(a: { method: string; params?: unknown[] }): Promise<unknown>; store?: SdkStore };
+
+/**
+ * The SDK's account store is persisted in IndexedDB and rehydrates asynchronously
+ * after the provider is created. A ceremony that finishes before rehydration gets
+ * its freshly stored account overwritten by the (older) snapshot — which showed up
+ * as "creating a wallet only works on the second try". Always wait for hydration.
+ */
+export async function readyProvider(connector: { getProvider(): Promise<unknown> }): Promise<SdkProvider> {
+  const provider = (await connector.getProvider()) as SdkProvider;
+  const persist = provider.store?.persist;
+  if (persist && !persist.hasHydrated()) {
+    await new Promise<void>((resolve) => {
+      const off = persist.onFinishHydration(() => {
+        off();
+        resolve();
+      });
+      setTimeout(resolve, 3000); // never hang the UI on a broken IndexedDB
+    });
+  }
+  return provider;
+}
 
 export function useWallets() {
   const qc = useQueryClient();
@@ -33,9 +56,9 @@ export function useWallets() {
   const [store, setStore] = useState<SdkStore | null>(null);
   useEffect(() => {
     let alive = true;
-    connector
-      ?.getProvider()
-      .then((p) => alive && setStore((p as { store?: SdkStore }).store ?? null))
+    if (!connector) return;
+    readyProvider(connector)
+      .then((p) => alive && setStore(p.store ?? null))
       .catch(() => {});
     return () => {
       alive = false;
@@ -45,10 +68,10 @@ export function useWallets() {
   /** Passkey ceremony path. */
   const connectWith = useCallback(
     async (capabilities: Record<string, unknown>) => {
+      const provider = await readyProvider(connector);
       if (active) {
         // wagmi's connect() refuses while connected and the connector skips wallet_connect when it
         // already has accounts — so talk to the provider; it emits accountsChanged and wagmi follows.
-        const provider = (await connector.getProvider()) as { request(a: { method: string; params?: unknown[] }): Promise<unknown> };
         await provider.request({ method: "wallet_connect", params: [{ capabilities }] });
       } else {
         await connectAsync({ connector, capabilities } as Parameters<typeof connectAsync>[0]);
@@ -81,9 +104,18 @@ export function useWallets() {
   const create = useCallback(
     async (label: string) => {
       await api("/api/wallets/pending-label", { method: "POST", json: { label: label.trim() || "Wallet" } });
+      // The SDK short-circuits `register` to a sign-in when a stored account already carries the same
+      // label — and every passkey of an identity is labelled with the username. Our UI names wallets
+      // from the server, so relabel the SDK's copies to their addresses before registering.
+      if (store) {
+        const accounts = store.getState().accounts;
+        if (accounts.some((a) => (a.label ?? "").toLowerCase() === (username ?? "").toLowerCase())) {
+          store.setState({ accounts: accounts.map((a) => ({ ...a, label: a.address })) });
+        }
+      }
       await connectWith({ method: "register", name: username ?? "wallet" });
     },
-    [connectWith, username],
+    [connectWith, store, username],
   );
 
   const rename = useCallback(
