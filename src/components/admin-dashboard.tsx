@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { Identicon } from "@/components/identicon";
 import { StatusBadge } from "@/components/order-status";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,30 @@ export type AdminData = {
 const usd = (v: S) => `$${formatAmount(BigInt(v))}`;
 const tok = (v: S) => `${formatAmount(BigInt(v))} AcmeUSD`;
 const REFRESH_MS = 15_000;
+
+function AddressCell({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-1">
+      <span className="font-mono text-xs">{address}</span>
+      <button
+        type="button"
+        title="Copy address"
+        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        onClick={async () => {
+          await navigator.clipboard.writeText(address);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+      <a href={addressUrl(address)} target="_blank" rel="noreferrer" title="View on explorer" className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -78,15 +102,15 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
   const data = q.data;
   const [busy, setBusy] = useState(false);
   const [sweep, setSweep] = useState<string | null>(null);
-  const [hideZero, setHideZero] = useState(false);
-
+  // Only wallets that actually hold AcmeUSD are listed (zero balances are noise for a liabilities view).
   const holders = useMemo(() => {
     const rows = [
-      ...data.users.map((u) => ({ address: u.address, balance: u.balance, joined: u.createdAt as string | null, known: true, who: u.username ? `@${u.username}${u.label ? ` · ${u.label}` : ""}` : null })),
+      ...data.users.map((u) => ({ address: u.address, balance: u.balance, joined: u.createdAt as string | null, known: true, who: u.username ? `@${u.username}` : null })),
       ...data.unknownHolders.map((u) => ({ address: u.address, balance: u.balance, joined: null, known: false, who: null })),
     ];
-    return (hideZero ? rows.filter((r) => BigInt(r.balance) !== 0n) : rows).sort((a, b) => Number(BigInt(b.balance) - BigInt(a.balance)));
-  }, [data, hideZero]);
+    return rows.filter((r) => BigInt(r.balance) !== 0n).sort((a, b) => Number(BigInt(b.balance) - BigInt(a.balance)));
+  }, [data]);
+  const zeroCount = data.users.filter((u) => BigInt(u.balance) === 0n).length + data.unknownHolders.filter((u) => BigInt(u.balance) === 0n).length;
   const userTotal = data.users.reduce((a, u) => a + BigInt(u.balance), 0n);
   const unknownTotal = BigInt(data.unknownTotal);
   const holdersStale = BigInt(data.holdersSyncedBlock) === 0n;
@@ -203,11 +227,10 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="text-base">Holders (on-chain balances)</CardTitle>
-              <CardDescription>Registered wallets plus every address that ever received AcmeUSD · indexed to block <span className="font-mono">{data.holdersSyncedBlock}</span></CardDescription>
+              <CardDescription>
+                Registered wallets plus every address that ever received AcmeUSD, non-zero balances only ({zeroCount} empty hidden) · indexed to block <span className="font-mono">{data.holdersSyncedBlock}</span>
+              </CardDescription>
             </div>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} /> hide zero balances
-            </label>
           </div>
         </CardHeader>
         <CardContent>
@@ -221,7 +244,7 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
                       <Identicon address={u.address} size={22} />
                       <div className="min-w-0">
                         {u.who && <div className="text-xs font-medium">{u.who}</div>}
-                        <a href={addressUrl(u.address)} target="_blank" rel="noreferrer" className="font-mono text-xs underline decoration-dotted">{u.address}</a>
+                        <AddressCell address={u.address} />
                       </div>
                       {!u.known && (
                         <span
@@ -237,7 +260,7 @@ export function AdminDashboard({ initial }: { initial: AdminData }) {
                   <TableCell className="text-right font-mono tabular-nums">{formatAmount(BigInt(u.balance))}</TableCell>
                 </TableRow>
               ))}
-              {holders.length === 0 && <TableRow><TableCell colSpan={3} className="text-muted-foreground">{hideZero ? "No non-zero balances." : "No holders yet."}</TableCell></TableRow>}
+              {holders.length === 0 && <TableRow><TableCell colSpan={3} className="text-muted-foreground">No non-zero balances yet.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

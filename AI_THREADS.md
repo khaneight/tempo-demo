@@ -175,6 +175,10 @@ Approved the implementation plan as written (plan-mode approval; no text). Per P
 
 > update main registration flow. two options: register and sign in. registration requires picking username and setting up passkey. once registered you can sign in with that passkey and create new wallets, each with their own name. username should show up in main wallet screen above wallet selector, with badge showing # of wallets. on nav bar it shows username rather than current address. can remove wallet selector button from nav bar
 
+### P23 · 2026-09-17 · admin holders polish
+
+> ok on admin page only show non zero balances on holders list, also onlyh show the username and wallet addrss in wallet column not wallet name, and add copy and explorer link buttons next to eac address
+
 ---
 
 ## Part 2 — Sessions: what the AI did, how it was steered, what it got wrong
